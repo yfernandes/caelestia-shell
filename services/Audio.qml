@@ -61,11 +61,13 @@ Singleton {
     }
 
     function setAudioSink(newSink: PwNode): void {
-        Pipewire.preferredDefaultAudioSink = newSink;
+        if (newSink?.ready)
+            Pipewire.preferredDefaultAudioSink = newSink;
     }
 
     function setAudioSource(newSource: PwNode): void {
-        Pipewire.preferredDefaultAudioSource = newSource;
+        if (newSource?.ready)
+            Pipewire.preferredDefaultAudioSource = newSource;
     }
 
     function cycleNextAudioOutput(): void {
@@ -159,9 +161,6 @@ Singleton {
         target: Pipewire.nodes
     }
 
-    PwObjectTracker {
-        objects: [...root.sinks, ...root.sources, ...root.streams]
-    }
 
     CavaProvider {
         id: cava
