@@ -108,6 +108,17 @@ Scope {
         }
     }
 
+    CustomShortcut {
+        name: "smcMixer"
+        description: "Toggle SMC mixer"
+        onPressed: {
+            if (root.hasFullscreen)
+                return;
+            const visibilities = Visibilities.getForActive();
+            visibilities.smcMixer = !visibilities.smcMixer;
+        }
+    }
+
     IpcHandler {
         function toggle(drawer: string): void {
             if (list().split("\n").includes(drawer)) {

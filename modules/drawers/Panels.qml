@@ -9,6 +9,7 @@ import qs.modules.notifications as Notifications
 import qs.modules.osd as Osd
 import qs.modules.session as Session
 import qs.modules.sidebar as Sidebar
+import qs.modules.smcmixer as SmcMixer
 import qs.modules.utilities as Utilities
 import qs.modules.bar.popouts as BarPopouts
 import qs.modules.utilities.toasts as Toasts
@@ -33,6 +34,7 @@ Item {
     readonly property alias utilities: utilities
     readonly property alias toasts: toasts
     readonly property alias sidebar: sidebar
+    readonly property alias smcMixer: smcMixer
 
     anchors.fill: parent
     anchors.margins: borderThickness
@@ -94,6 +96,16 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: parent.right
         }
+    }
+
+    SmcMixer.Wrapper {
+        id: smcMixer
+
+        screen: root.screen
+        visibilities: root.visibilities
+
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
     }
 
     Launcher.Wrapper {
