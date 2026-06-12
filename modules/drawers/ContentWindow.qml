@@ -61,6 +61,7 @@ StyledWindow {
     onHasFullscreenChanged: {
         screenState.launcher = false;
         screenState.session = false;
+        screenState.smcMixer = false;
         screenState.dashboard = false;
         panels.popouts.close();
     }
@@ -68,7 +69,7 @@ StyledWindow {
     name: "drawers"
     WlrLayershell.exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: (fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen) || (hasSpecialWorkspace && hasFullscreenOnNormalWs) ? WlrLayer.Overlay : WlrLayer.Top
-    WlrLayershell.keyboardFocus: screenState.launcher || screenState.session ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: screenState.launcher || screenState.session || screenState.smcMixer ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     mask: hasFullscreen ? emptyRegion : regions
 
@@ -115,7 +116,7 @@ StyledWindow {
         active: {
             const s = root.screenState;
             const conf = root.contentItem.Config;
-            if ((s.launcher && conf.launcher.enabled) || (s.session && conf.session.enabled) || (s.sidebar && conf.sidebar.enabled))
+            if ((s.launcher && conf.launcher.enabled) || (s.session && conf.session.enabled) || s.smcMixer || (s.sidebar && conf.sidebar.enabled))
                 return true;
             if (!conf.dashboard.showOnHover && s.dashboard && conf.dashboard.enabled)
                 return true;
@@ -127,6 +128,7 @@ StyledWindow {
         onCleared: {
             root.screenState.launcher = false;
             root.screenState.session = false;
+            root.screenState.smcMixer = false;
             root.screenState.sidebar = false;
             root.screenState.dashboard = false;
             panels.popouts.hasCurrent = false;
