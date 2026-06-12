@@ -10,7 +10,7 @@ Item {
     id: root
 
     required property var list
-    readonly property string math: list.search.text.slice(`${GlobalConfig.launcher.actionPrefix}calc `.length)
+    readonly property string math: list.search.text.startsWith("=") ? list.search.text.slice(1) : list.search.text.slice(`${GlobalConfig.launcher.actionPrefix}calc `.length)
 
     function onClicked(): void {
         Quickshell.execDetached(["wl-copy", Qalculator.rawResult]);
@@ -77,12 +77,12 @@ Item {
             StateLayer {
                 id: stateLayer
 
-                onClicked: {
-                    Quickshell.execDetached(["app2unit", "--", ...GlobalConfig.general.apps.terminal, "fish", "-C", `exec qalc -i '${root.math}'`]);
+                color: Colours.palette.m3onTertiary
+
+                function onClicked(): void {
+                    Quickshell.execDetached(["app2unit", "--", ...GlobalConfig.general.apps.terminal, "zsh", "-c", `qalc -i '${root.math}'`]);
                     root.list.visibilities.launcher = false;
                 }
-
-                color: Colours.palette.m3onTertiary
             }
 
             StyledText {
