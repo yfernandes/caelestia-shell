@@ -64,6 +64,12 @@ if("shell" IN_LIST ENABLE_MODULES)
         install(DIRECTORY ${dir} DESTINATION "${INSTALL_QSCONFDIR}")
     endforeach()
 
+    foreach(script webapp-install webapp-launch webapp-remove webapp-remove-all)
+        if(EXISTS "${CMAKE_SOURCE_DIR}/../${script}")
+            install(PROGRAMS "${CMAKE_SOURCE_DIR}/../${script}" DESTINATION "${INSTALL_QSCONFDIR}/assets")
+        endif()
+    endforeach()
+
     file(READ shell.qml SHELL_QML)
     string(REPLACE "settings.watchFiles: true" "settings.watchFiles: false" SHELL_QML "${SHELL_QML}")
     file(WRITE "${CMAKE_BINARY_DIR}/qml/shell.qml" "${SHELL_QML}")

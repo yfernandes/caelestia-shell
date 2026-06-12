@@ -43,6 +43,9 @@ Searcher {
             } else if (command[0] === "setMode" && command.length > 1) {
                 list.visibilities.launcher = false;
                 Colours.setMode(command[1]);
+            } else if (command[0] === "drawer" && command.length > 1) {
+                list.visibilities.launcher = false;
+                list.visibilities[command[1]] = true;
             } else {
                 list.visibilities.launcher = false;
                 Quickshell.execDetached(command);
