@@ -48,10 +48,15 @@ StyledListView {
     state: {
         const text = search.text;
         const prefix = GlobalConfig.launcher.actionPrefix;
+        if (text.startsWith("=")) {
+            return "calc";
+        }
         if (text.startsWith(prefix)) {
-            for (const action of ["calc", "scheme", "variant"])
-                if (text.startsWith(`${prefix}${action} `))
+            for (const action of ["calc", "scheme", "variant", "webapp"]) {
+                const command = `${prefix}${action}`;
+                if (text === command || text.startsWith(`${command} `))
                     return action;
+            }
 
             return "actions";
         }
@@ -103,6 +108,14 @@ StyledListView {
             PropertyChanges {
                 model.values: M3Variants.query(search.text)
                 root.delegate: variantItem
+            }
+        },
+        State {
+            name: "webapp"
+
+            PropertyChanges {
+                model.values: [0]
+                root.delegate: webAppItem
             }
         }
     ]
@@ -253,6 +266,14 @@ StyledListView {
         id: variantItem
 
         VariantItem {
+            list: root
+        }
+    }
+
+    Component {
+        id: webAppItem
+
+        WebAppItem {
             list: root
         }
     }

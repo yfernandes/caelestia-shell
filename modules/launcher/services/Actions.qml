@@ -44,6 +44,9 @@ Searcher {
             } else if (command[0] === "setMode" && command.length > 1) {
                 list.screenState.launcher = false;
                 Colours.setMode(command[1]);
+            } else if (command[0] === "drawer" && command.length > 1) {
+                list.screenState.launcher = false;
+                list.screenState[command[1]] = true;
             } else {
                 list.screenState.launcher = false;
                 if (!SessionManager.exec(command))

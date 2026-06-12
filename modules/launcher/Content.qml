@@ -18,6 +18,11 @@ Item {
     readonly property int padding: Tokens.padding.large
     readonly property int rounding: Tokens.rounding.extraLarge
 
+    function isLauncherCommand(text: string, command: string): bool {
+        const fullCommand = `${GlobalConfig.launcher.actionPrefix}${command}`;
+        return text === fullCommand || text.startsWith(`${fullCommand} `);
+    }
+
     implicitWidth: listWrapper.width + padding * 2
     implicitHeight: search.height + listWrapper.height + padding + search.anchors.bottomMargin
 
@@ -68,8 +73,8 @@ Item {
                         Wallpapers.previewColourLock = true;
                     Wallpapers.setWallpaper(currentItem.modelData.path);
                     root.screenState.launcher = false;
-                } else if (text.startsWith(GlobalConfig.launcher.actionPrefix)) {
-                    if (text.startsWith(`${GlobalConfig.launcher.actionPrefix}calc `))
+                } else if (text.startsWith(GlobalConfig.launcher.actionPrefix) || text.startsWith("=")) {
+                    if (root.isLauncherCommand(text, "calc") || root.isLauncherCommand(text, "webapp") || text.startsWith("="))
                         currentItem.onClicked();
                     else
                         currentItem.modelData.onClicked(list.currentList);
