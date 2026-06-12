@@ -710,7 +710,7 @@ StyledRect {
         property bool commandDisabled
 
         checked: active
-        toggle: true
+        isToggle: true
         type: IconButton.Tonal
         disabled: !SmcMixer.connected || commandDisabled
         padding: Appearance.padding.smaller
