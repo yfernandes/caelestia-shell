@@ -9,10 +9,20 @@ Singleton {
     property var bars: new Map()
 
     function load(screen: ShellScreen, visibilities: DrawerVisibilities): void {
-        screens.set(Hypr.monitorFor(screen), visibilities);
+        screens.set(screen, visibilities);
+    }
+
+    function unload(screen: ShellScreen): void {
+        screens.delete(screen);
+        bars.delete(screen);
     }
 
     function getForActive(): DrawerVisibilities {
-        return screens.get(Hypr.focusedMonitor);
+        const focused = Hypr.focusedMonitor;
+        for (const [screen, vis] of screens.entries()) {
+            if (Hypr.monitorFor(screen) === focused)
+                return vis;
+        }
+        return null;
     }
 }
