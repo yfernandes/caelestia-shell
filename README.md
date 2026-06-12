@@ -81,7 +81,7 @@ Dependencies:
 -   [`libcava`](https://github.com/LukashonakV/cava)
 -   [`networkmanager`](https://networkmanager.dev)
 -   [`lm-sensors`](https://github.com/lm-sensors/lm-sensors)
--   [`fish`](https://github.com/fish-shell/fish-shell)
+-   [`zsh`](https://zsh.sourceforge.io/)
 -   [`aubio`](https://github.com/aubio/aubio)
 -   [`libpipewire`](https://pipewire.org)
 -   `glibc`
@@ -334,7 +334,7 @@ For example, to disable the bar on DP-1:
         "mediaGifSpeedAdjustment": 300,
         "sessionGifSpeed": 0.7,
         "apps": {
-            "terminal": ["foot"],
+            "terminal": ["ghostty", "-e"],
             "audio": ["pavucontrol"],
             "playback": ["mpv"],
             "explorer": ["thunar"]
