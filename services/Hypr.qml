@@ -39,10 +39,66 @@ Singleton {
     property bool hadKeyboard
     property string lastSpecialWorkspace: ""
 
+    property bool luaConfig: false
+
     signal configReloaded
 
     function dispatch(request: string): void {
-        Hyprland.dispatch(request);
+        Hyprland.dispatch(luaConfig ? _toLuaDispatch(request) : request);
+    }
+
+    function _toLuaDispatch(request: string): string {
+        if (request.startsWith("workspace ")) {
+            const target = request.slice(10).trim();
+            // Relative: r+N / r-N → strip leading r
+            if (/^r[+-]\d+$/.test(target))
+                return `hl.dsp.focus({ workspace = "${target.slice(1)}" })`;
+            const id = parseInt(target, 10);
+            if (!isNaN(id) && String(id) === target)
+                return `hl.dsp.focus({ workspace = ${id} })`;
+            return `hl.dsp.focus({ workspace = "${target}" })`;
+        }
+        if (request.startsWith("togglespecialworkspace ")) {
+            const name = request.slice(22).trim();
+            if (name && name !== "special")
+                return `hl.dsp.workspace.toggle_special("${name}")`;
+            return `hl.dsp.workspace.toggle_special()`;
+        }
+        if (request === "togglespecialworkspace")
+            return `hl.dsp.workspace.toggle_special()`;
+        if (request.startsWith("movetoworkspace ")) {
+            const args = request.slice(16).trim();
+            const comma = args.indexOf(",");
+            if (comma !== -1) {
+                const ws = args.slice(0, comma).trim();
+                const win = args.slice(comma + 1).trim();
+                const wsId = parseInt(ws, 10);
+                const wsLua = (!isNaN(wsId) && String(wsId) === ws) ? String(wsId) : `"${ws}"`;
+                return `hl.dsp.window.move({ workspace = ${wsLua}, window = "${win}" })`;
+            }
+            const wsId = parseInt(args, 10);
+            const wsLua = (!isNaN(wsId) && String(wsId) === args) ? String(wsId) : `"${args}"`;
+            return `hl.dsp.window.move({ workspace = ${wsLua} })`;
+        }
+        if (request.startsWith("togglefloating")) {
+            const rest = request.slice(14).trim();
+            return rest
+                ? `hl.dsp.window.float({ action = "toggle", window = "${rest}" })`
+                : `hl.dsp.window.float({ action = "toggle" })`;
+        }
+        if (request === "pin" || request.startsWith("pin ")) {
+            const rest = request.slice(3).trim();
+            return rest
+                ? `hl.dsp.window.pin({ window = "${rest}" })`
+                : `hl.dsp.window.pin()`;
+        }
+        if (request.startsWith("killwindow")) {
+            const rest = request.slice(10).trim();
+            return rest
+                ? `hl.dsp.window.close({ window = "${rest}" })`
+                : `hl.dsp.window.close()`;
+        }
+        return request;
     }
 
     function cycleSpecialWorkspace(direction: string): void {
@@ -90,7 +146,10 @@ Singleton {
         extras.batchMessage(["keyword bindlni ,Caps_Lock,global,caelestia:refreshDevices", "keyword bindlni ,Num_Lock,global,caelestia:refreshDevices"]);
     }
 
-    Component.onCompleted: reloadDynamicConfs()
+    Component.onCompleted: {
+        reloadDynamicConfs();
+        luaConfigDetector.running = true;
+    }
 
     onCapsLockChanged: {
         if (!GlobalConfig.utilities.toasts.capsLockChanged)
@@ -128,6 +187,7 @@ Singleton {
             if (n === "configreloaded") {
                 root.configReloaded();
                 root.reloadDynamicConfs();
+                luaConfigDetector.running = true;
             } else if (["workspace", "moveworkspace", "activespecial", "focusedmon"].includes(n)) {
                 Hyprland.refreshWorkspaces();
                 Hyprland.refreshMonitors();
@@ -214,6 +274,22 @@ Singleton {
         description: "Reload devices"
         onPressed: extras.refreshDevices()
         onReleased: extras.refreshDevices()
+    }
+
+    Process {
+        id: luaConfigDetector
+
+        command: ["hyprctl", "systeminfo"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                for (const line of text.split("\n")) {
+                    if (line.includes("configProvider:")) {
+                        root.luaConfig = line.toLowerCase().includes("lua");
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     HyprExtras {
