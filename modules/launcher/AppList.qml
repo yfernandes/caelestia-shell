@@ -28,10 +28,15 @@ StyledListView {
 
     function stateForText(text: string): string {
         const prefix = GlobalConfig.launcher.actionPrefix;
+        if (text.startsWith("="))
+            return "calc";
+
         if (text.startsWith(prefix)) {
-            for (const action of ["calc", "scheme", "variant"])
-                if (text.startsWith(`${prefix}${action} `))
+            for (const action of ["calc", "scheme", "variant", "webapp"]) {
+                const command = `${prefix}${action}`;
+                if (text === command || text.startsWith(`${command} `))
                     return action;
+            }
 
             return "actions";
         }
@@ -49,6 +54,8 @@ StyledListView {
             return Schemes.query(text);
         case "variant":
             return M3Variants.query(text);
+        case "webapp":
+            return [0];
         default:
             return Apps.search(text);
         }
@@ -125,6 +132,14 @@ StyledListView {
 
             PropertyChanges {
                 root.delegate: variantItem
+            }
+        },
+        State {
+            name: "webapp"
+
+            PropertyChanges {
+                model.values: [0]
+                root.delegate: webAppItem
             }
         }
     ]
@@ -301,5 +316,13 @@ StyledListView {
         }
 
         target: root.screenState
+    }
+
+    Component {
+        id: webAppItem
+
+        WebAppItem {
+            list: root
+        }
     }
 }
