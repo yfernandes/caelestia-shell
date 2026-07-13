@@ -3,7 +3,7 @@ import Quickshell
 PersistentProperties {
     required property ShellScreen modelData
 
-    // Drawer visibilities
+    // Drawer state
     property bool bar
     property bool osd
     property bool session
