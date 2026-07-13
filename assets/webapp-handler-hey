@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# caelestia:summary=Open HEY webmail and translate mailto links
+# caelestia:args=[url]
+
+set -euo pipefail
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+url=${1:-}
+web_url="https://app.hey.com"
+
+# Handle mailto: URLs
+if [[ $url =~ ^mailto: ]]; then
+  email=$(echo "$url" | sed 's/mailto://')
+  web_url="https://app.hey.com/messages/new?to=$email"
+fi
+
+exec "$script_dir/webapp-launch" "$web_url"

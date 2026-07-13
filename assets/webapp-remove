@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+desktop_dir=${XDG_DATA_HOME:-$HOME/.local/share}/applications
+icon_dir=$desktop_dir/icons
+
+usage() {
+  echo "Usage: webapp-remove <name...>"
+}
+
+update_database() {
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$desktop_dir" >/dev/null 2>&1 || true
+  fi
+}
+
+if (( $# == 0 )); then
+  if ! command -v gum >/dev/null 2>&1; then
+    usage >&2
+    echo "Error: interactive mode requires gum. Pass one or more app names instead." >&2
+    exit 2
+  fi
+
+  web_apps=()
+  while IFS= read -r -d '' file; do
+    if grep -q '^Exec=.*webapp-launch' "$file" 2>/dev/null; then
+      web_apps+=("$(basename "${file%.desktop}")")
+    fi
+  done < <(find "$desktop_dir" -maxdepth 1 -name '*.desktop' -print0 2>/dev/null)
+
+  if (( ${#web_apps[@]} == 0 )); then
+    echo "No web apps found."
+    exit 0
+  fi
+
+  mapfile -t app_names < <(printf '%s\n' "${web_apps[@]}" | sort | gum choose --no-limit --header "Select web apps to remove...")
+else
+  app_names=("$@")
+fi
+
+if (( ${#app_names[@]} == 0 )); then
+  echo "No web apps selected."
+  exit 0
+fi
+
+for app_name in "${app_names[@]}"; do
+  rm -f "$desktop_dir/${app_name//\//_}.desktop"
+  rm -f "$icon_dir/$app_name.png"
+  echo "Removed $app_name"
+done
+
+update_database

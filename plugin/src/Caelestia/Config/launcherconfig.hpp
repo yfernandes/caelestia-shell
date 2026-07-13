@@ -50,6 +50,18 @@ class LauncherConfig : public ConfigObject {
                 { u"command"_s, QStringList{ u"autocomplete"_s, u"calc"_s } },
             }),
             vmap({
+                { u"name"_s, u"Create Web App"_s },
+                { u"icon"_s, u"add_to_home_screen"_s },
+                { u"description"_s, u"Create a desktop entry for a chromium instance in app mode"_s },
+                { u"command"_s, QStringList{ u"autocomplete"_s, u"webapp"_s } },
+            }),
+            vmap({
+                { u"name"_s, u"SMC Mixer"_s },
+                { u"icon"_s, u"volume_up"_s },
+                { u"description"_s, u"Control system volume and audio devices"_s },
+                { u"command"_s, QStringList{ u"drawer"_s, u"smcMixer"_s } },
+            }),
+            vmap({
                 { u"name"_s, u"Scheme"_s },
                 { u"icon"_s, u"palette"_s },
                 { u"description"_s, u"Change the current colour scheme"_s },

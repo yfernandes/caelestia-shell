@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# caelestia:summary=Launch a TUI or focus an existing terminal window for it
+# caelestia:args=<command> [args...]
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+APP_ID="org.caelestia.$(basename "$1")"
+
+# Fallback chain for launching the TUI helper
+if command -v caelestia-launch-tui >/dev/null 2>&1; then
+  LAUNCH_COMMAND="caelestia-launch-tui $@"
+elif command -v omarchy-launch-tui >/dev/null 2>&1; then
+  LAUNCH_COMMAND="omarchy-launch-tui $@"
+else
+  LAUNCH_COMMAND="launch-tui $@"
+fi
+
+exec "$script_dir/launch-or-focus" "$APP_ID" "$LAUNCH_COMMAND"
