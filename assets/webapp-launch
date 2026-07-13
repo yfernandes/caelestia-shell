@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: webapp-launch <url> [browser-flags...]"
+}
+
+is_chromium_desktop() {
+  local desktop_id=${1##*/}
+  desktop_id=${desktop_id%.desktop}
+
+  case ${desktop_id,,} in
+    chromium* | org.chromium.* | google-chrome* | com.google.chrome* | brave* | com.brave.browser* | \
+      microsoft-edge* | com.microsoft.edge* | opera* | com.opera.* | vivaldi* | com.vivaldi.* | \
+      helium* | thorium* | ungoogled-chromium*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+desktop_paths() {
+  local data_home=${XDG_DATA_HOME:-$HOME/.local/share}
+  local data_dirs=${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
+
+  printf '%s\n' "$data_home/applications"
+  printf '%s\n' "$HOME/.nix-profile/share/applications"
+
+  local dir
+  IFS=: read -r -a dirs <<< "$data_dirs"
+  for dir in "${dirs[@]}"; do
+    [[ -n $dir ]] && printf '%s\n' "$dir/applications"
+  done
+}
+
+find_desktop_file() {
+  local desktop_id=$1
+  local dir
+
+  [[ $desktop_id == *.desktop ]] || desktop_id="$desktop_id.desktop"
+
+  while IFS= read -r dir; do
+    [[ -f $dir/$desktop_id ]] && {
+      printf '%s\n' "$dir/$desktop_id"
+      return 0
+    }
+  done < <(desktop_paths)
+
+  return 1
+}
+
+desktop_exec() {
+  local desktop_file=$1
+  local exec_line
+
+  exec_line=$(sed -n 's/^Exec=//p' "$desktop_file" | head -n 1)
+  exec_line=${exec_line//%[fFuUdDnNickvm]/}
+  exec_line=${exec_line//%%/%}
+  exec_line=${exec_line#"${exec_line%%[![:space:]]*}"}
+  exec_line=${exec_line%"${exec_line##*[![:space:]]}"}
+
+  [[ -n $exec_line ]] && printf '%s\n' "$exec_line"
+}
+
+fallback_browser() {
+  local candidate
+
+  for candidate in chromium chromium-browser google-chrome-stable google-chrome brave brave-browser microsoft-edge-stable microsoft-edge opera vivaldi; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s\n' chromium
+}
+
+browser_command() {
+  local default_browser desktop_file
+
+  if command -v xdg-settings >/dev/null 2>&1; then
+    default_browser=$(xdg-settings get default-web-browser 2>/dev/null || true)
+  fi
+
+  if [[ -n ${default_browser:-} ]] && is_chromium_desktop "$default_browser" && desktop_file=$(find_desktop_file "$default_browser"); then
+    desktop_exec "$desktop_file"
+    return 0
+  fi
+
+  fallback_browser
+}
+
+if (( $# < 1 )); then
+  usage >&2
+  exit 2
+fi
+
+url=$1
+shift
+
+command_line=$(browser_command)
+browser_args=()
+eval "browser_args=($command_line)"
+
+if (( ${#browser_args[@]} == 0 )); then
+  echo "Error: could not resolve a Chromium-family browser command." >&2
+  exit 1
+fi
+
+if command -v uwsm-app >/dev/null 2>&1 && [[ -n ${UWSM_ID:-} || -n ${UWSM_SESSION_ID:-} ]]; then
+  exec setsid uwsm-app -- "${browser_args[@]}" --app="$url" "$@"
+fi
+
+exec setsid "${browser_args[@]}" --app="$url" "$@"

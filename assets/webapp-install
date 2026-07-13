@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+desktop_dir=${XDG_DATA_HOME:-$HOME/.local/share}/applications
+icon_dir=$desktop_dir/icons
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+
+usage() {
+  cat <<'EOF'
+Usage: webapp-install <name> <url> <icon> [custom-exec] [mime-types]
+       webapp-install
+
+Creates ~/.local/share/applications/<name>.desktop.
+When no arguments are provided, interactive mode is used if gum is installed.
+EOF
+}
+
+has_scheme() {
+  [[ $1 =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]]
+}
+
+normalise_url() {
+  local url=$1
+
+  if has_scheme "$url"; then
+    printf '%s\n' "$url"
+  else
+    printf 'https://%s\n' "$url"
+  fi
+}
+
+desktop_quote() {
+  local value=$1
+
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//\$/\\\$}
+  value=${value//\`/\\\`}
+  printf '"%s"' "$value"
+}
+
+download_icon() {
+  local url=$1
+  local path=$2
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$path" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$path" "$url"
+  else
+    echo "Error: curl or wget is required to download icon URLs." >&2
+    return 1
+  fi
+
+  [[ -s $path ]]
+}
+
+resolve_icon() {
+  local app_name=$1
+  local icon_ref=$2
+  local icon_path
+
+  mkdir -p "$icon_dir"
+
+  if [[ $icon_ref =~ ^https?:// ]]; then
+    icon_path=$icon_dir/$app_name.png
+    download_icon "$icon_ref" "$icon_path" || {
+      echo "Error: failed to download icon from $icon_ref" >&2
+      exit 1
+    }
+    printf '%s\n' "$icon_path"
+  elif [[ $icon_ref == */* || $icon_ref == ./* || $icon_ref == ../* || $icon_ref == ~/* ]]; then
+    icon_ref=${icon_ref/#\~/$HOME}
+    if [[ ! -f $icon_ref ]]; then
+      echo "Error: icon path does not exist: $icon_ref" >&2
+      exit 1
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+      realpath "$icon_ref"
+    else
+      printf '%s\n' "$icon_ref"
+    fi
+  else
+    printf '%s\n' "$icon_ref"
+  fi
+}
+
+update_database() {
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$desktop_dir" >/dev/null 2>&1 || true
+  fi
+}
+
+launcher_command() {
+  if [[ -x $script_dir/webapp-launch ]]; then
+    desktop_quote "$script_dir/webapp-launch"
+  elif command -v webapp-launch >/dev/null 2>&1; then
+    desktop_quote "$(command -v webapp-launch)"
+  else
+    printf '%s\n' webapp-launch
+  fi
+}
+
+if (( $# == 0 )); then
+  if ! command -v gum >/dev/null 2>&1; then
+    usage >&2
+    echo "Error: interactive mode requires gum. Pass arguments instead." >&2
+    exit 2
+  fi
+
+  app_name=$(gum input --prompt "Name> " --placeholder "ChatGPT")
+  app_url=$(gum input --prompt "URL> " --placeholder "https://chatgpt.com")
+  app_url=$(normalise_url "$app_url")
+  icon_ref=$(gum input --prompt "Icon> " --placeholder "Icon URL, local path, or icon name")
+  custom_exec=""
+  mime_types=""
+elif (( $# >= 3 )); then
+  app_name=$1
+  app_url=$(normalise_url "$2")
+  icon_ref=$3
+  custom_exec=${4:-}
+  mime_types=${5:-}
+else
+  usage >&2
+  exit 2
+fi
+
+if [[ -z $app_name || -z $app_url || -z $icon_ref ]]; then
+  echo "Error: name, url, and icon are required." >&2
+  exit 1
+fi
+
+mkdir -p "$desktop_dir" "$icon_dir"
+
+icon=$(resolve_icon "$app_name" "$icon_ref")
+desktop_file=$desktop_dir/${app_name//\//_}.desktop
+
+if [[ -n $custom_exec ]]; then
+  exec_command=$custom_exec
+else
+  exec_command="$(launcher_command) $(desktop_quote "$app_url")"
+fi
+
+{
+  echo "[Desktop Entry]"
+  echo "Version=1.0"
+  echo "Name=$app_name"
+  echo "Comment=$app_name"
+  echo "Exec=$exec_command"
+  echo "Terminal=false"
+  echo "Type=Application"
+  echo "Icon=$icon"
+  echo "StartupNotify=true"
+  [[ -n $mime_types ]] && echo "MimeType=$mime_types"
+} > "$desktop_file"
+
+chmod +x "$desktop_file"
+update_database
+
+echo "Created $desktop_file"

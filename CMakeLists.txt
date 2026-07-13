@@ -66,9 +66,9 @@ if("shell" IN_LIST ENABLE_MODULES)
 
     install(PROGRAMS assets/wrap_term_launch.sh DESTINATION "${INSTALL_QSCONFDIR}/assets")
 
-    foreach(script webapp-install webapp-launch webapp-remove webapp-remove-all)
-        if(EXISTS "${CMAKE_SOURCE_DIR}/../${script}")
-            install(PROGRAMS "${CMAKE_SOURCE_DIR}/../${script}" DESTINATION "${INSTALL_QSCONFDIR}/assets")
+    foreach(script webapp-install webapp-launch webapp-remove webapp-remove-all launch-or-focus launch-or-focus-tui launch-or-focus-webapp webapp-handler-hey webapp-handler-zoom)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/${script}")
+            install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/assets/${script}" DESTINATION "${INSTALL_QSCONFDIR}/assets")
         endif()
     endforeach()
 

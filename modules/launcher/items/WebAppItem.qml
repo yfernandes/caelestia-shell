@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import QtQuick.Layouts
+import qs.components.images
 
 Item {
     id: root
@@ -16,26 +17,80 @@ Item {
     readonly property var fields: rawInput.split("|").map(f => f.trim())
     readonly property string appName: fields[0] ?? ""
     readonly property string appUrl: fields[1] ?? ""
-    readonly property string appIcon: fields[2] || faviconUrl(appUrl)
+    
+    property string resolvedIcon: ""
+    property string lastCheckedName: ""
+
+    readonly property string appIcon: resolvedIcon || fields[2] || faviconUrl(appUrl)
     readonly property string customExec: fields[3] ?? ""
     readonly property string mimeTypes: fields[4] ?? ""
     readonly property bool ready: appName.length > 0 && appUrl.length > 0
     readonly property string example: `${GlobalConfig.launcher.actionPrefix}webapp ChatGPT | chatgpt.com`
 
-    function normalisedUrl(url: string): string {
+    onAppNameChanged: updateIcon()
+    onAppUrlChanged: updateIcon()
+    Component.onCompleted: updateIcon()
+
+    function updateIcon() {
+        if (fields[2]) {
+            resolvedIcon = fields[2];
+            return;
+        }
+
+        const fallback = faviconUrl(appUrl);
+        if (!appName) {
+            resolvedIcon = fallback;
+            return;
+        }
+
+        checkSimpleIcon(appName, fallback);
+    }
+
+    function checkSimpleIcon(name, fallbackUrl) {
+        if (!name) {
+            resolvedIcon = fallbackUrl;
+            return;
+        }
+
+        if (name === lastCheckedName)
+            return;
+        lastCheckedName = name;
+
+        // Slugify
+        let slug = name.toLowerCase().trim();
+        slug = slug.replace(/\.js$/i, "dotjs");
+        slug = slug.replace(/[^a-z0-9]/g, "");
+
+        const simpleUrl = `https://cdn.simpleicons.org/${slug}`;
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("HEAD", simpleUrl, true);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    resolvedIcon = simpleUrl;
+                } else {
+                    resolvedIcon = fallbackUrl;
+                }
+            }
+        }
+        xhr.send();
+    }
+
+    function normalisedUrl(url) {
         return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) ? url : `https://${url}`;
     }
 
-    function faviconUrl(url: string): string {
+    function faviconUrl(url) {
         if (!url)
             return "";
 
         const normalised = normalisedUrl(url);
         const match = normalised.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/:?#]+)/);
-        return `https://www.google.com/s2/favicons?domain=${match?.[1] ?? normalised}&sz=128`;
+        return `https://www.google.com/s2/favicons?domain=${(match && match[1]) ? match[1] : normalised}&sz=128`;
     }
 
-    function installCommand(): list<string> {
+    function installCommand() {
         const runner = `
 shell_dir=$1
 shift
@@ -60,7 +115,7 @@ exit 127
         return command;
     }
 
-    function onClicked(): void {
+    function onClicked() {
         if (!ready) {
             Toaster.toast(qsTr("Web app details missing"), qsTr("Use: %1").arg(example), "add_to_home_screen", Toast.Warning);
             return;
@@ -91,11 +146,31 @@ exit 127
 
         spacing: Tokens.spacing.medium
 
-        MaterialIcon {
-            text: root.ready ? "add_to_home_screen" : "edit_note"
-            fontStyle: Tokens.font.icon.extraLarge
-            color: root.ready ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
+        Loader {
             Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: root.implicitHeight * 0.6
+            Layout.preferredHeight: root.implicitHeight * 0.6
+
+            sourceComponent: (root.ready && root.appIcon) ? brandIcon : genericIcon
+        }
+
+        Component {
+            id: brandIcon
+
+            CachingIconImage {
+                source: root.appIcon
+                implicitSize: root.implicitHeight * 0.6
+            }
+        }
+
+        Component {
+            id: genericIcon
+
+            MaterialIcon {
+                text: root.ready ? "add_to_home_screen" : "edit_note"
+                fontStyle: Tokens.font.icon.builders.extraLarge.scale(1.2).build()
+                color: root.ready ? Colours.palette.m3primary : Colours.palette.m3onSurfaceVariant
+            }
         }
 
         ColumnLayout {
