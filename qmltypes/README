@@ -1,0 +1,13 @@
+QML type stubs generated automatically using:
+mise run stubgen
+
+Which runs under the hood:
+uv run pyside6-qml-stubgen . --out-dir qmltypes --ignore .venv --ignore build
+
+---
+
+To compile and package the complete Caelestia QML SDK (containing both C++ plugins with `.qmltypes` and native QML directories mapped to `qs.*` namespaces with auto-generated `qmldir` files) for third-party plugin developers:
+
+mise run build-sdk
+
+This generates the SDK in `build/sdk`, which external developers can include in their QML import paths (e.g. QML2_IMPORT_PATH or IDE configurations) to get full type completion and static checking.
