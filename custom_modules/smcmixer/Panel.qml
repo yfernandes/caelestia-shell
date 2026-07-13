@@ -4,15 +4,41 @@ import qs.components
 import qs.components.controls
 import qs.services
 import Caelestia.Config
-import Quickshell
 import QtQuick
 import QtQuick.Layouts
 
+// Isolated SMC Mixer panel.
+//
+// Data flows in via properties; commands flow out via signals.
+// This file has no knowledge of the SmcMixer service or any host shell API.
 StyledRect {
     id: root
 
-    required property ScreenState screenState
+    // ── Data inputs ──────────────────────────────────────────────────────────
+    property var channels: []
+    property var streams: []
+    property bool ready: false
+    property bool connected: false
+    property bool deviceConnected: true
     property real maxHeight: 900
+
+    // ── Helper function inputs ────────────────────────────────────────────────
+    // Provided by the host adapter so Panel never calls host singletons directly.
+    property var fnChannelLabel: function(idx) { return "CH" + (idx + 1); }
+    property var fnStreamSubtitle: function(_stream) { return ""; }
+    property var fnKindLabel: function(_kind) { return ""; }
+    property var fnDisplayName: function(_stream) { return ""; }
+    property var fnStreamForChannel: function(_ch) { return null; }
+
+    // ── Command outputs ───────────────────────────────────────────────────────
+    signal requestBind(int ch, var stream)
+    signal requestUnbind(int ch)
+    signal requestToggleMute(int ch)
+    signal requestToggleSolo(int ch)
+    signal requestReconnect()
+    signal requestClose()
+
+    // ── Internal UI state ─────────────────────────────────────────────────────
     property int selectedChannel: 0
     property int pickerChannel: -1
     property int navSetting: 0
@@ -26,18 +52,9 @@ StyledRect {
     color: Colours.transparency.enabled ? Colours.layer(Colours.palette.m3surfaceContainer, 2) : Colours.palette.m3surfaceContainerHigh
     clip: true
 
+    // ── Pure helpers (no service calls) ───────────────────────────────────────
     function clamp(value: real): real {
         return Math.max(0, Math.min(1, value ?? 0));
-    }
-
-    function streamsForKind(kind: int): var {
-        const blocked = {};
-        for (let i = 0; i < SmcMixer.channels.length; i++) {
-            const channel = SmcMixer.channels[i] ?? {};
-            if (i !== pickerChannel && channel.user_bound && channel.stream_id !== undefined)
-                blocked[channel.stream_id] = true;
-        }
-        return SmcMixer.streams.filter(stream => (stream.kind ?? 0) === kind && !blocked[stream.id]);
     }
 
     function volumeText(value: real): string {
@@ -48,14 +65,42 @@ StyledRect {
         return qsTr("CH%1").arg(selectedChannel + 1);
     }
 
+    function kindAccentColor(kind: int): color {
+        switch (kind) {
+        case 1: return "#FF4444";
+        case 2: return "#4488FF";
+        default: return "#44FF88";
+        }
+    }
+
+    function kindShortLabel(kind: int): string {
+        switch (kind) {
+        case 1: return "input";
+        case 2: return "output";
+        default: return "source";
+        }
+    }
+
+    function streamsForKind(kind: int): var {
+        const blocked = {};
+        for (let i = 0; i < channels.length; i++) {
+            const channel = channels[i] ?? {};
+            if (i !== pickerChannel && channel.user_bound && channel.stream_id !== undefined)
+                blocked[channel.stream_id] = true;
+        }
+        return streams.filter(s => (s.kind ?? 0) === kind && !blocked[s.id]);
+    }
+
     function openBind(index: int): void {
         selectedChannel = index;
         pickerChannel = pickerChannel === index ? -1 : index;
     }
 
     function close(): void {
-        screenState.smcMixer = false;
+        requestClose();
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     ColumnLayout {
         id: shell
@@ -95,9 +140,9 @@ StyledRect {
             spacing: Tokens.spacing.medium
 
             StatusPill {
-                text: SmcMixer.ready ? qsTr("Main") : qsTr("Waiting")
+                text: root.ready ? qsTr("Main") : qsTr("Waiting")
                 icon: "view_column"
-                active: SmcMixer.ready
+                active: root.ready
             }
 
             StyledText {
@@ -116,18 +161,9 @@ StyledRect {
 
             Repeater {
                 model: [
-                    {
-                        name: qsTr("stream"),
-                        icon: "graphic_eq"
-                    },
-                    {
-                        name: qsTr("mute"),
-                        icon: "volume_off"
-                    },
-                    {
-                        name: qsTr("solo"),
-                        icon: "filter_center_focus"
-                    }
+                    { name: qsTr("stream"), icon: "graphic_eq" },
+                    { name: qsTr("mute"), icon: "volume_off" },
+                    { name: qsTr("solo"), icon: "filter_center_focus" }
                 ]
 
                 StatusTab {
@@ -146,8 +182,8 @@ StyledRect {
             }
 
             StyledText {
-                text: SmcMixer.deviceConnected ? qsTr("MIDI linked") : qsTr("No MIDI device")
-                color: SmcMixer.deviceConnected ? Colours.palette.m3onSurfaceVariant : Colours.palette.m3error
+                text: root.deviceConnected ? qsTr("MIDI linked") : qsTr("No MIDI device")
+                color: root.deviceConnected ? Colours.palette.m3onSurfaceVariant : Colours.palette.m3error
                 font.weight: 600
             }
 
@@ -159,7 +195,7 @@ StyledRect {
             IconButton {
                 icon: "refresh"
                 type: IconButton.Tonal
-                onClicked: SmcMixer.reconnect()
+                onClicked: root.requestReconnect()
             }
 
             IconButton {
@@ -205,19 +241,21 @@ StyledRect {
         required property int channelIndex
         property bool selected
         property bool binding
-        readonly property var channel: SmcMixer.channels[channelIndex] ?? {}
-        readonly property var boundStream: SmcMixer.streamForChannel(channel)
+        readonly property var channel: root.channels[channelIndex] ?? {}
+        readonly property var boundStream: root.fnStreamForChannel(channel)
         readonly property bool bound: channel.stream_id !== undefined || !!channel.name
         readonly property bool muted: !!channel.mute || !!channel.solo_muted
         readonly property bool crossfader: !!channel.cross_sink_a_name || !!channel.cross_sink_b_name
+        readonly property int kind: channel.kind ?? 0
+        readonly property color accent: root.kindAccentColor(kind)
 
         signal activated
         signal pickRequested
 
         radius: Tokens.rounding.small
         color: strip.binding ? Colours.palette.m3tertiaryContainer : strip.selected ? Colours.palette.m3secondaryContainer : Colours.palette.m3surfaceContainerHigh
-        border.width: strip.selected ? 2 : 0
-        border.color: Colours.palette.m3primary
+        border.width: strip.selected ? 2 : 1
+        border.color: strip.selected ? strip.accent : Colours.palette.m3outlineVariant
 
         StateLayer {
             color: Colours.palette.m3onSurface
@@ -227,229 +265,245 @@ StyledRect {
             }
         }
 
-        RowLayout {
+        ColumnLayout {
             anchors.fill: parent
             anchors.margins: Tokens.padding.small
-            spacing: Tokens.spacing.small
+            spacing: 3
 
-            ColumnLayout {
+            RowLayout {
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: Tokens.spacing.small
+                spacing: 0
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Tokens.spacing.extraSmall
+                StyledText {
+                    text: "CH" + (strip.channelIndex + 1)
+                    color: Colours.palette.m3onSurfaceVariant
+                    font: Tokens.font.body.small
+                    font.weight: 700
+                }
 
-                    StyledRect {
-                        implicitWidth: 28
-                        implicitHeight: 24
-                        radius: Tokens.rounding.small
-                        color: Colours.palette.m3primaryContainer
-
-                        StyledText {
-                            anchors.centerIn: parent
-                            text: strip.channelIndex + 1
-                            color: Colours.palette.m3onPrimaryContainer
-                            font.weight: 800
-                        }
-                    }
-
-                    Badge {
-                        Layout.fillWidth: true
-                        text: SmcMixer.kindLabel(strip.channel.kind ?? 0)
-                    }
+                StyledText {
+                    text: " · "
+                    color: Colours.palette.m3outlineVariant
+                    font: Tokens.font.body.small
                 }
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: SmcMixer.channelLabel(strip.channelIndex)
-                    color: strip.bound ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant
+                    text: root.kindShortLabel(strip.kind)
+                    color: strip.bound ? strip.accent : Colours.palette.m3outlineVariant
+                    font: Tokens.font.body.small
                     font.weight: 700
                     elide: Text.ElideRight
-                    maximumLineCount: 1
+                }
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: root.fnChannelLabel(strip.channelIndex)
+                color: strip.bound ? Colours.palette.m3onSurface : Colours.palette.m3outline
+                font.weight: 700
+                elide: Text.ElideRight
+                maximumLineCount: 1
+            }
+
+            StyledText {
+                Layout.fillWidth: true
+                text: {
+                    const subtitle = root.fnStreamSubtitle(strip.boundStream);
+                    if (subtitle)
+                        return subtitle;
+                    if (strip.crossfader)
+                        return `${strip.channel.cross_sink_a_name || "-"} / ${strip.channel.cross_sink_b_name || "-"}`;
+                    return "";
+                }
+                color: Colours.palette.m3onSurfaceVariant
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                font: Tokens.font.body.small
+                visible: text !== ""
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                StyledText {
+                    text: strip.crossfader ? "⇄" : "◎"
+                    color: Colours.palette.m3onSurfaceVariant
+                    font: Tokens.font.body.small
                 }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-
-                    StyledText {
-                        Layout.fillWidth: true
-                        text: strip.boundStream?.app_name || strip.boundStream?.bind_key || (strip.bound ? qsTr("Active") : qsTr("Unbound"))
-                        color: Colours.palette.m3onSurfaceVariant
-                        elide: Text.ElideRight
-                    }
-
-                    StyledText {
-                        Layout.fillWidth: true
-                        text: {
-                            const subtitle = SmcMixer.streamSubtitle(strip.boundStream);
-                            if (subtitle)
-                                return subtitle;
-                            if (strip.crossfader)
-                                return `${strip.channel.cross_sink_a_name || "-"} / ${strip.channel.cross_sink_b_name || "-"}`;
-                            return strip.bound ? qsTr("No metadata") : qsTr("Offline");
-                        }
-                        color: strip.muted ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
-                        elide: Text.ElideRight
-                        maximumLineCount: 2
-                    }
+                StyledText {
+                    text: strip.crossfader
+                        ? `${strip.channel.cross_sink_a_name || "A"}↔${strip.channel.cross_sink_b_name || "B"}`
+                        : `${Math.round((strip.channel.knob ?? 0) / 127 * 100)}%`
+                    color: Colours.palette.m3onSurface
+                    font.weight: 700
+                    font: Tokens.font.body.small
                 }
 
-                KnobSection {
+                BarMeter {
                     Layout.fillWidth: true
-                    value: strip.channel.knob ?? 0
-                    crossfader: strip.crossfader
-                    labelA: strip.channel.cross_sink_a_name ?? ""
-                    labelB: strip.channel.cross_sink_b_name ?? ""
+                    value: (strip.channel.knob ?? 0) / 127
+                    fillColour: Colours.palette.m3tertiary
                 }
+            }
 
-                FaderSection {
-                    Layout.fillWidth: true
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: Tokens.spacing.extraSmall
+
+                VerticalFader {
                     Layout.fillHeight: true
+                    Layout.preferredWidth: 28
                     volume: strip.channel.actual_volume ?? 0
-                    fader: strip.channel.fader_pos ?? 0
+                    faderPos: strip.channel.fader_pos ?? 0
                     synced: !!strip.channel.synced
                     muted: strip.muted
                 }
-            }
 
-            ColumnLayout {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 34
-                spacing: Tokens.spacing.small
-
-                ToolButton {
-                    icon: "link"
-                    active: strip.binding
-                    onClicked: strip.pickRequested()
-                }
-
-                Item {
+                ColumnLayout {
                     Layout.fillHeight: true
-                }
+                    spacing: 2
 
-                ToolButton {
-                    icon: "volume_off"
-                    active: strip.muted
-                    onClicked: SmcMixer.toggleMute(strip.channelIndex)
-                }
+                    Item { Layout.fillHeight: true }
 
-                ToolButton {
-                    icon: "filter_center_focus"
-                    active: !!strip.channel.solo
-                    onClicked: SmcMixer.toggleSolo(strip.channelIndex)
-                }
+                    TuiButton {
+                        label: "[M]"
+                        active: strip.muted
+                        navFocused: root.selectedChannel === strip.channelIndex && root.navSetting === 1
+                        activeColor: "#ffaf00"
+                        onPressed: root.requestToggleMute(strip.channelIndex)
+                    }
 
-                ToolButton {
-                    icon: "radio_button_checked"
-                    active: !!strip.channel.rec || !!strip.channel.advanced
-                    commandDisabled: true
-                }
+                    TuiButton {
+                        label: "[S]"
+                        active: !!strip.channel.solo
+                        navFocused: root.selectedChannel === strip.channelIndex && root.navSetting === 2
+                        activeColor: "#ffff00"
+                        activeTextColor: "#000000"
+                        onPressed: root.requestToggleSolo(strip.channelIndex)
+                    }
 
-                ToolButton {
-                    icon: "stop"
-                    active: !!strip.channel.stop
-                    commandDisabled: true
+                    TuiButton {
+                        label: "[R]"
+                        active: !!strip.channel.rec || !!strip.channel.advanced
+                        activeColor: "#ff3333"
+                        enabled: root.connected
+                    }
+
+                    TuiButton {
+                        label: "[■]"
+                        active: !!strip.channel.stop
+                        activeColor: "#5f87ff"
+                        enabled: root.connected
+                    }
                 }
             }
-        }
-    }
 
-    component KnobSection: ColumnLayout {
-        id: knob
-
-        required property int value
-        property bool crossfader
-        property string labelA
-        property string labelB
-
-        spacing: Tokens.spacing.extraSmall
-
-        RowLayout {
-            Layout.fillWidth: true
-
-            StyledText {
+            RowLayout {
                 Layout.fillWidth: true
-                text: crossfader ? qsTr("Crossfader") : qsTr("Knob")
-                color: Colours.palette.m3onSurfaceVariant
+                spacing: Tokens.spacing.extraSmall
+
+                Rectangle {
+                    width: 14
+                    height: 14
+                    radius: 2
+                    color: strip.muted ? Colours.palette.m3error : strip.accent
+                    opacity: strip.bound ? 1.0 : 0.25
+                }
+
+                Item { Layout.fillWidth: true }
+
+                StyledText {
+                    text: root.volumeText(strip.channel.actual_volume ?? 0)
+                    color: strip.muted ? Colours.palette.m3error : Colours.palette.m3onSurface
+                    font.weight: 700
+                    font: Tokens.font.body.small
+                }
             }
-
-            StyledText {
-                text: knob.value
-                color: Colours.palette.m3onSurface
-                font.weight: 700
-            }
-        }
-
-        BarMeter {
-            Layout.fillWidth: true
-            value: knob.value / 127
-            fillColour: Colours.palette.m3tertiary
-        }
-
-        StyledText {
-            Layout.fillWidth: true
-            visible: knob.crossfader
-            text: `${knob.labelA || "-"} / ${knob.labelB || "-"}`
-            color: Colours.palette.m3onSurfaceVariant
-            elide: Text.ElideRight
         }
     }
 
-    component FaderSection: ColumnLayout {
-        id: fader
+    component VerticalFader: Item {
+        id: vfader
 
         required property real volume
-        required property real fader
+        required property real faderPos
         property bool synced
         property bool muted
 
-        spacing: Tokens.spacing.extraSmall
+        readonly property int segments: 7
+        readonly property color fillColor: muted ? Colours.palette.m3error : Colours.palette.m3primary
+        readonly property color pickupColor: "#ffaf00"
+        readonly property color dimColor: Colours.palette.m3surfaceContainerHighest
 
-        RowLayout {
-            Layout.fillWidth: true
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 2
 
-            StyledText {
-                Layout.fillWidth: true
-                text: qsTr("Volume")
-                color: Colours.palette.m3onSurfaceVariant
-            }
+            Repeater {
+                model: vfader.segments
 
-            StyledText {
-                text: root.volumeText(fader.volume)
-                color: fader.muted ? Colours.palette.m3error : Colours.palette.m3onSurface
-                font.weight: 700
-            }
-        }
+                Rectangle {
+                    required property int index
 
-        BarMeter {
-            Layout.fillWidth: true
-            value: fader.volume
-            fillColour: fader.muted ? Colours.palette.m3error : Colours.palette.m3primary
-        }
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 2
 
-        RowLayout {
-            Layout.fillWidth: true
+                    readonly property bool filled: index >= (vfader.segments - Math.round(root.clamp(vfader.volume) * vfader.segments))
+                    readonly property bool faderFilled: !vfader.synced && index >= (vfader.segments - Math.round(root.clamp(vfader.faderPos) * vfader.segments))
 
-            StyledText {
-                Layout.fillWidth: true
-                text: fader.synced ? qsTr("Synced") : qsTr("Pickup")
-                color: fader.synced ? Colours.palette.m3onSurfaceVariant : Colours.palette.m3error
-                font.weight: 600
-            }
-
-            StyledText {
-                text: root.volumeText(fader.fader)
-                color: Colours.palette.m3onSurfaceVariant
+                    color: {
+                        if (filled)
+                            return vfader.fillColor;
+                        if (faderFilled)
+                            return vfader.pickupColor;
+                        return vfader.dimColor;
+                    }
+                }
             }
         }
+    }
 
-        BarMeter {
-            Layout.fillWidth: true
-            value: fader.fader
-            fillColour: Colours.palette.m3secondary
+    component TuiButton: StyledRect {
+        id: btn
+
+        required property string label
+        property bool active
+        property bool navFocused
+        property bool enabled: true
+        property color activeColor: Colours.palette.m3primary
+        property color activeTextColor: "#ffffff"
+
+        signal pressed
+
+        implicitWidth: btnText.implicitWidth + 4
+        implicitHeight: btnText.implicitHeight + 2
+        radius: 2
+        color: active ? btn.activeColor : "transparent"
+        border.width: navFocused ? 1 : 0
+        border.color: "#ffff00"
+        opacity: btn.enabled ? 1.0 : 0.4
+
+        StyledText {
+            id: btnText
+
+            anchors.centerIn: parent
+            text: btn.label
+            color: btn.active ? btn.activeTextColor : Colours.palette.m3onSurfaceVariant
+            font: Tokens.font.body.small
+            font.weight: btn.active ? 700 : 400
+            font.family: "monospace"
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            enabled: btn.enabled
+            cursorShape: Qt.PointingHandCursor
+            onClicked: btn.pressed()
         }
     }
 
@@ -480,7 +534,7 @@ StyledRect {
                     text: qsTr("Unbind")
                     type: TextButton.Text
                     onClicked: {
-                        SmcMixer.unbind(root.pickerChannel);
+                        root.requestUnbind(root.pickerChannel);
                         root.pickerChannel = -1;
                     }
                 }
@@ -512,7 +566,7 @@ StyledRect {
                             spacing: Tokens.spacing.small
 
                             StyledText {
-                                text: SmcMixer.kindLabel(modelData)
+                                text: root.fnKindLabel(modelData)
                                 color: Colours.palette.m3onSurfaceVariant
                                 font.weight: 800
                             }
@@ -526,7 +580,7 @@ StyledRect {
                                     Layout.fillWidth: true
                                     stream: modelData
                                     onClicked: {
-                                        SmcMixer.bind(root.pickerChannel, modelData);
+                                        root.requestBind(root.pickerChannel, modelData);
                                         root.pickerChannel = -1;
                                     }
                                 }
@@ -564,7 +618,7 @@ StyledRect {
 
             Badge {
                 Layout.preferredWidth: 54
-                text: SmcMixer.kindLabel(row.stream.kind ?? 0)
+                text: root.fnKindLabel(row.stream.kind ?? 0)
             }
 
             ColumnLayout {
@@ -573,7 +627,7 @@ StyledRect {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: SmcMixer.displayName(row.stream)
+                    text: root.fnDisplayName(row.stream)
                     color: Colours.palette.m3onSurface
                     font.weight: 700
                     elide: Text.ElideRight
@@ -581,7 +635,7 @@ StyledRect {
 
                 StyledText {
                     Layout.fillWidth: true
-                    text: SmcMixer.streamSubtitle(row.stream)
+                    text: root.fnStreamSubtitle(row.stream)
                     color: Colours.palette.m3onSurfaceVariant
                     elide: Text.ElideRight
                 }
@@ -595,7 +649,7 @@ StyledRect {
         required property real value
         property color fillColour: Colours.palette.m3primary
 
-        implicitHeight: 8
+        implicitHeight: 6
         radius: Tokens.rounding.full
         color: Colours.palette.m3surfaceContainerHighest
         clip: true
@@ -701,18 +755,5 @@ StyledRect {
                 font.weight: tab.active ? 800 : 600
             }
         }
-    }
-
-    component ToolButton: IconButton {
-        id: button
-
-        property bool active
-        property bool commandDisabled
-
-        checked: active
-        isToggle: true
-        type: IconButton.Tonal
-        disabled: !SmcMixer.connected || commandDisabled
-        padding: Tokens.padding.extraSmall
     }
 }

@@ -9,7 +9,7 @@ import qs.modules.notifications as Notifications
 import qs.modules.osd as Osd
 import qs.modules.session as Session
 import qs.modules.sidebar as Sidebar
-import qs.modules.smcmixer as SmcMixer
+import qs.custom_modules.smcmixer as SmcMixer
 import qs.modules.utilities as Utilities
 import qs.modules.bar.popouts as BarPopouts
 import qs.modules.utilities.toasts as Toasts
