@@ -1,0 +1,19 @@
+[tools]
+python = "3.14"
+uv = "latest"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.sync]
+description = "Sync project dependencies with uv"
+run = "uv sync"
+
+[tasks.stubgen]
+description = "Generate QML stub files using pyside6-qml-stubgen"
+run = "uv run pyside6-qml-stubgen . --out-dir qmltypes --ignore .venv --ignore build"
+
+[tasks.build-sdk]
+description = "Build the Caelestia QML SDK containing type stubs and definitions"
+run = "python3 scripts/generate-qml-stubs.py"
+
