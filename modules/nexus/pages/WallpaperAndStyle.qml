@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Layouts
+import Quickshell
 import Caelestia.Components
 import Caelestia.Config
 import qs.components
@@ -12,6 +13,43 @@ import qs.modules.nexus.common
 
 PageBase {
     id: root
+
+    readonly property list<MenuItem> extractorItems: [
+        MenuItem { text: qsTr("Legacy") },
+        MenuItem { text: qsTr("Material Color Utilities") }
+    ]
+    readonly property list<string> extractorValues: ["legacy", "material"]
+    readonly property list<MenuItem> modeItems: [
+        MenuItem { text: qsTr("Auto") },
+        MenuItem { text: qsTr("Light") },
+        MenuItem { text: qsTr("Dark") }
+    ]
+    readonly property list<string> modeValues: ["auto", "light", "dark"]
+    readonly property list<MenuItem> legacyFlavourItems: [
+        MenuItem { text: qsTr("Standard") },
+        MenuItem { text: qsTr("High") }
+    ]
+    readonly property list<string> legacyFlavourValues: ["default", "hard"]
+    readonly property list<MenuItem> materialVariantItems: [
+        MenuItem { text: qsTr("Tonal spot") },
+        MenuItem { text: qsTr("Vibrant") },
+        MenuItem { text: qsTr("Expressive") },
+        MenuItem { text: qsTr("Fidelity") },
+        MenuItem { text: qsTr("Fruit salad") },
+        MenuItem { text: qsTr("Monochrome") },
+        MenuItem { text: qsTr("Neutral") },
+        MenuItem { text: qsTr("Rainbow") },
+        MenuItem { text: qsTr("Content") }
+    ]
+    readonly property list<string> materialVariantValues: ["tonalspot", "vibrant", "expressive", "fidelity", "fruitsalad", "monochrome", "neutral", "rainbow", "content"]
+    function itemFor(values: list<string>, items: list<MenuItem>, value: string): MenuItem {
+        return items[Math.max(0, values.indexOf(value))];
+    }
+
+    function refreshDynamicScheme(): void {
+        GlobalConfig.saveNow();
+        Quickshell.execDetached([Quickshell.env("CAELESTIA_CLI") || "caelestia", "scheme", "refresh"]);
+    }
 
     title: qsTr("Wallpaper & style")
 
@@ -168,6 +206,18 @@ PageBase {
                 verticalPadding: Tokens.padding.medium
                 onClicked: root.nState.openSubPage(3) // Colours page
             }
+
+            IconTextButton {
+                icon: "refresh"
+                text: qsTr("Refresh scheme")
+                font: Tokens.font.body.large
+                isRound: true
+                shapeMorph: true
+                type: IconTextButton.Tonal
+                horizontalPadding: Tokens.padding.extraLarge
+                verticalPadding: Tokens.padding.medium
+                onClicked: root.refreshDynamicScheme()
+            }
         }
 
         ToggleRow {
@@ -180,19 +230,99 @@ PageBase {
         ToggleRow {
             Layout.topMargin: Tokens.spacing.extraSmall / 2 - parent.spacing
 
+            last: true
             text: qsTr("Transparency")
             subtext: qsTr("Base %1, layers %2").arg(Colours.transparency.base).arg(Colours.transparency.layers)
             checked: Colours.transparency.enabled
             onToggled: GlobalConfig.appearance.transparency.enabled = checked
         }
 
-        ToggleRow {
-            Layout.topMargin: Tokens.spacing.extraSmall / 2 - parent.spacing
+        SectionHeader {
+            text: qsTr("Dynamic colour scheme")
+        }
 
+        SelectRow {
+            first: true
+            label: qsTr("Extractor")
+            subtext: qsTr("Colour model used for dynamic schemes")
+            menuItems: root.extractorItems
+            active: root.itemFor(root.extractorValues, root.extractorItems, GlobalConfig.services.dynamicSchemeBackend)
+            onSelected: item => {
+                GlobalConfig.services.dynamicSchemeBackend = root.extractorValues[root.extractorItems.indexOf(item)];
+                root.refreshDynamicScheme();
+            }
+        }
+
+        SelectRow {
+            Layout.fillWidth: true
+            Layout.topMargin: GlobalConfig.services.dynamicSchemeBackend === "legacy" ? -parent.spacing : 0
+            Layout.preferredHeight: visible ? implicitHeight : 0
+            visible: GlobalConfig.services.dynamicSchemeBackend === "legacy"
+            label: qsTr("Surface contrast")
+            subtext: qsTr("High darkens generated surfaces")
+            menuItems: root.legacyFlavourItems
+            active: root.itemFor(root.legacyFlavourValues, root.legacyFlavourItems, GlobalConfig.services.dynamicSchemeLegacyFlavour)
+            onSelected: item => {
+                GlobalConfig.services.dynamicSchemeLegacyFlavour = root.legacyFlavourValues[root.legacyFlavourItems.indexOf(item)];
+                root.refreshDynamicScheme();
+            }
+        }
+
+        ToggleRow {
+            Layout.fillWidth: true
+            Layout.topMargin: visible ? -parent.spacing : 0
+            Layout.preferredHeight: visible ? implicitHeight : 0
+            visible: GlobalConfig.services.dynamicSchemeBackend === "legacy"
             last: true
             text: qsTr("Dark theme")
             checked: !Colours.light
             onToggled: Colours.setMode(checked ? "dark" : "light")
+        }
+
+        SelectRow {
+            Layout.topMargin: visible ? -parent.spacing : 0
+            Layout.preferredHeight: visible ? implicitHeight : 0
+            visible: GlobalConfig.services.dynamicSchemeBackend === "material"
+            label: qsTr("Theme mode")
+            subtext: qsTr("Auto follows the wallpaper; light and dark are fixed")
+            menuOnTop: true
+            menuItems: root.modeItems
+            active: root.itemFor(root.modeValues, root.modeItems, GlobalConfig.services.dynamicSchemeMode)
+            onSelected: item => {
+                GlobalConfig.services.dynamicSchemeMode = root.modeValues[root.modeItems.indexOf(item)];
+                root.refreshDynamicScheme();
+            }
+        }
+
+        SelectRow {
+            Layout.topMargin: visible ? -parent.spacing : 0
+            Layout.preferredHeight: visible ? implicitHeight : 0
+            visible: GlobalConfig.services.dynamicSchemeBackend === "material"
+            label: qsTr("Material variant")
+            subtext: qsTr("Palette strategy for the Material extractor")
+            menuItems: root.materialVariantItems
+            active: root.itemFor(root.materialVariantValues, root.materialVariantItems, GlobalConfig.services.materialSchemeVariant)
+            onSelected: item => {
+                GlobalConfig.services.materialSchemeVariant = root.materialVariantValues[root.materialVariantItems.indexOf(item)];
+                root.refreshDynamicScheme();
+            }
+        }
+
+        StepperRow {
+            Layout.topMargin: visible ? -parent.spacing : 0
+            Layout.preferredHeight: visible ? implicitHeight : 0
+            visible: GlobalConfig.services.dynamicSchemeBackend === "material"
+            last: true
+            label: qsTr("Material contrast")
+            subtext: qsTr("Contrast adjustment from -1.0 to 1.0")
+            value: GlobalConfig.services.materialSchemeContrastLevel ?? 0
+            from: -1
+            to: 1
+            stepSize: 0.01
+            onMoved: value => {
+                GlobalConfig.services.materialSchemeContrastLevel = value;
+                root.refreshDynamicScheme();
+            }
         }
     }
 }
