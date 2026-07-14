@@ -12,7 +12,7 @@ target_compile_definitions(version PRIVATE
 install(TARGETS version DESTINATION ${INSTALL_LIBDIR})
 
 file(GLOB_RECURSE MATERIAL_COLOR_UTILITIES_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/reference/material-color-utilities/cpp/*.cc"
+    "${CMAKE_SOURCE_DIR}/third_party/material-color-utilities/cpp/*.cc"
 )
 list(FILTER MATERIAL_COLOR_UTILITIES_SOURCES EXCLUDE REGEX "_test\\.cc$")
 
@@ -21,7 +21,7 @@ add_executable(material-extractor
     ${MATERIAL_COLOR_UTILITIES_SOURCES}
 )
 target_include_directories(material-extractor PRIVATE
-    "${CMAKE_SOURCE_DIR}/reference/material-color-utilities"
+    "${CMAKE_SOURCE_DIR}/third_party/material-color-utilities"
 )
 target_link_libraries(material-extractor PRIVATE Qt::Gui absl::flat_hash_map absl::strings)
 # The upstream header uses std::optional without including its declaration.

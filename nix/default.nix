@@ -78,7 +78,7 @@
       fileset = lib.fileset.unions [
         ./../CMakeLists.txt
         ./../extras
-        ./../reference/material-color-utilities
+        ./../third_party/material-color-utilities
       ];
     };
 
