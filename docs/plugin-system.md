@@ -2,6 +2,32 @@
 
 Status: **Design — not yet implemented**
 
+## Contents
+
+1. [Motivation](#1-motivation)
+2. [Goals and non-goals](#2-goals-and-non-goals)
+3. [Plugin unit and discovery](#3-plugin-unit-and-discovery)
+4. [Manifest schema (`plugin.json`)](#4-manifest-schema-pluginjson)
+   - 4.1 [The extension ladder, and why there is no plugin taxonomy](#41-the-extension-ladder-and-why-there-is-no-plugin-taxonomy)
+   - 4.2 [Command verb grammar](#42-command-verb-grammar)
+5. [Architecture](#5-architecture)
+   - 5.1 [C++ layer — `plugin/src/Caelestia/Plugins/`](#51-c-layer--pluginsrccaelestiaplugins)
+   - 5.2 [QML layer — `services/Plugins.qml`](#52-qml-layer--servicespluginsqml)
+6. [Surface extension points (opening the closed seams)](#6-surface-extension-points-opening-the-closed-seams)
+7. [Declarative Nexus pages (the deep-plugin substrate)](#7-declarative-nexus-pages-the-deep-plugin-substrate)
+   - 7.1 [What gets schematized (and what doesn't)](#71-what-gets-schematized-and-what-doesnt)
+   - 7.2 [Schema format](#72-schema-format)
+   - 7.3 [Interpreter](#73-interpreter)
+8. [Page patches — how deep plugins modify existing pages](#8-page-patches--how-deep-plugins-modify-existing-pages)
+9. [Dependency and conflict resolution](#9-dependency-and-conflict-resolution)
+10. [Native code: the out-of-process rule](#10-native-code-the-out-of-process-rule)
+    - 10.1 [The shell↔CLI contract](#101-the-shellcli-contract)
+11. [Configuration](#11-configuration)
+12. [Risks and mitigations](#12-risks-and-mitigations)
+13. [Implementation roadmap](#13-implementation-roadmap)
+14. [Verification plan](#14-verification-plan)
+- [Appendix A — Coverage check against real fork features](#appendix-a--coverage-check-against-real-fork-features)
+
 ## 1. Motivation
 
 The shell already carries the intent to support plugins, but none of it is wired:
