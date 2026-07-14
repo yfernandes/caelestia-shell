@@ -1,3 +1,3 @@
-[submodule "reference/material-color-utilities"]
-	path = reference/material-color-utilities
+[submodule "third_party/material-color-utilities"]
+	path = third_party/material-color-utilities
 	url = https://github.com/material-foundation/material-color-utilities.git
