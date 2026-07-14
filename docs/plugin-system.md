@@ -65,8 +65,9 @@ resolution** so patches from independent plugins compose deterministically or fa
 **Goals**
 
 - Drop-in plugins: install a directory, restart the shell, done — for data-only plugins.
-  Executable-class plugins (any QML or commands, §4.1) add exactly one step: a first-run
-  approval on the Plugins page (§12). No
+  Executable-class plugins (any QML or commands, §4.1) add exactly one acknowledgement step:
+  a first-run approval on the Plugins page (§12), followed by the normal reload that activates
+  any newly installed plugin. No
   editing of shell source in either case.
 - Extension points for surface plugins: bar widgets, drawer panels, launcher actions, Nexus
   pages, headless background services, external daemons.
@@ -193,7 +194,7 @@ Field semantics:
 | `dashboardTabs[]` | Tabs appended to the dashboard's tab bar. |
 | `launcherProviders[]` | Searchable launcher modes (emoji picker, clipboard history, …) entered via the `autocomplete` verb; §6. |
 | `desktopWidgets[]` | Widgets rendered on the background/desktop layer (floating lyrics, desktop clock, pets); `position` enum as for panels. |
-| `services` | Headless QML files instantiated once at startup. May contain `IpcHandler` items; targets must be named `<plugin>` or `<plugin>.<sub>`. |
+| `services` | Headless QML files instantiated once at startup. May contain `IpcHandler` items; targets follow the reviewed naming convention `<plugin>` or `<plugin>.<sub>` (§6). |
 | `daemon` | Optional external process. `managed: true` → shell runs it via `Process { running: enabled }`; `managed: false` → user-run. Convention: newline-delimited JSON `{kind, data}` frames over a unix socket in `$XDG_RUNTIME_DIR` (the smcmixer pattern). |
 | `executables` | Named native helper binaries inside the plugin dir, resolvable by the shell, the CLI, and other plugins via the registry (§10). |
 | `backendProviders[]` | Registers an executable as a provider for a shell-defined backend extension point (§10.1): `extensionPoint` (shell-owned id), `value` (the selection value this provider claims — must match an option the plugin `extendSelect`s), `executable` (key into `executables`), `protocol` (versioned protocol id the executable implements). This is what lets external consumers map a selected backend value to something they can actually run. |
@@ -259,7 +260,10 @@ command line (`["loginctl", "poweroff"]`). That form stays grandfathered for *us
 (with a deprecation warning) but is **invalid in plugin content**: the dispatcher gains the
 explicit `exec` verb, and a bare command in a plugin manifest or patch is a validation error.
 This closure is what makes the data-only proof in §4.1 sound — every code-capable command is
-spelled `exec`, and the classifier has no heuristics to get wrong.
+spelled `exec`, and the classifier has no heuristics to get wrong. The constrained `call`
+object used by a schema row's `write` binding (§7.2) is not a command: it is validated against
+the same shell-owned singleton/function allowlist as `read`, and is unavailable in
+`onChanged` lists.
 
 ## 5. Architecture
 
@@ -285,7 +289,7 @@ class PluginManifest : public QObject { // QML_UNCREATABLE
     // CONSTANT: name, version, description, author (QString); dir (QUrl)
     // CONSTANT: barWidgets (QVariantMap), panels / launcherActions / nexusPages /
     //           dependencies (QVariantList), services (QStringList),
-    //           daemon / executables (QVariantMap)
+    //           daemon / executables (QVariantMap), … all remaining manifest contribution keys
     // status (enum: Active, Disabled, AwaitingConsent, MissingDependency, Conflict, ManifestError)
     // statusMessage (QString) — human-readable explanation for non-Active states
     // enabled (bool, R/W) — writes through to GlobalConfig.plugins.disabled
@@ -349,6 +353,9 @@ Loading ──▶ Failed   on error   (log errorString(), one-shot Toaster error
 Loading ──▶ Failed   on timeout (10 s watchdog — there is no forever-Loading state;
                                  a component stuck loading is a failure)
 ```
+
+The same 10-second watchdog wraps every `Loader`-owned UI slot; a Loader that remains
+`Loading` is cleared and reported through its handle as `Failed`.
 
 **Services** (single-instance, aggregator-owned): the handle creates the `Component` with
 `Qt.createComponent(url, Component.Asynchronous)` and instantiation happens only on `Ready`,
@@ -458,8 +465,9 @@ component:
   plugin provider, a `Loader.setSource(handle.url, { query, close })` swaps in that
   provider's view (the same mechanism the wallpaper mode uses today via `ContentList.qml`'s
   `showWallpapers` branch, generalized).
-- Provider action names are plugin-namespaced against built-in modes; a collision with a
-  built-in mode is rejected at validation.
+- Provider action names are bare launcher mode names (as in the manifest example), so each is
+  validated for uniqueness against built-in modes and other plugin providers; a collision is
+  rejected at validation.
 
 **Utilities quick toggles** — `modules/utilities/cards/Toggles.qml` renders
 `utilities.quickToggles` config entries through a `DelegateChooser` on id (`wifi`,
@@ -473,8 +481,10 @@ buttons. Users then enable plugin toggles by adding `{ "id": "<plugin>.<toggle>"
 `dashboardTabs` list consumed by `Tabs.qml` and a content `ScriptModel`. Plugin tabs are
 appended: `dashboardTabs.concat(Plugins.dashboardTabs)`. Appending (never inserting) keeps
 built-in tab indices stable, which matters because `ScreenState.dashboardTab` persists an int
-index. Tab contract: `iconName`/`text` metadata plus a content component loaded lazily like
-the built-in tabs.
+index. Plugin-tab indices are deliberately not durable: when the plugin segment changes, an
+out-of-range or plugin-segment selection resets to the default built-in tab rather than being
+interpreted as a different plugin. Tab contract: `iconName`/`text` metadata plus a content
+component loaded lazily like the built-in tabs.
 
 **Desktop widgets** — the background layer (`modules/background/`) gains a repeater over
 `Plugins.desktopWidgets`, mirroring `PluginPanelSlot`: a positioned, lazily-loaded slot on the
@@ -606,7 +616,8 @@ Schema elements:
     - `read: "qml:<Singleton>.<prop>"` — a property with a NOTIFY signal on a whitelisted
       shell singleton; optional `negate: true` describes the *read* transformation only.
     - `write` — either a `shell:`/`plugin:` path (direct set), or an object
-      `{ "call": "<Singleton>.<fn>", "map": { … } }` where `map` translates the row value
+      `{ "call": "<Singleton>.<fn>", "map": { … } }` where `<Singleton>.<fn>` must be in
+      the shell-owned read/write singleton allowlist. `map` translates the row value
       (JSON-stringified as the lookup key) into the call argument before invoking; without
       `map`, the value is passed as-is. The map is required whenever read and write speak
       different vocabularies — the "Dark theme" row above is the canonical case: it *reads*
@@ -614,8 +625,6 @@ Schema elements:
       alone cannot express the write side.
     - In `onChanged` verb lists, `exec` arguments may use the `$value` placeholder, replaced
       with the row's current value at dispatch time.
-    Bare `call:` strings are valid only inside `onChanged` verb lists — never as a value
-    bind, since they carry no getter and no notification.
 - **`visibleWhen`** — declarative condition: `{ bind, equals | in | truthy }`. Evaluated
   reactively; hidden rows collapse (the `Layout.preferredHeight: visible ? implicitHeight : 0`
   pattern the current page uses by hand becomes automatic).
@@ -668,7 +677,7 @@ A `nexusPatches` file is a list of operations addressed by stable ids:
                 }
             ]
         },
-        { "op": "appendSection", "page": "wallpaperAndStyle", "section": { "id": "…", "rows": ["…"] } }
+        { "op": "appendSection", "section": { "id": "…", "rows": ["…"] } }
     ]
 }
 ```
@@ -689,10 +698,10 @@ A `nexusPatches` file is a list of operations addressed by stable ids:
   only *reference* (anchor to, extend, modify) built-in ids and ids of plugins they declare in
   `dependencies`. Referencing an id from an undeclared plugin is a validation error — this is
   what makes the dependency graph honest.
-- An anchor/target that doesn't exist at apply time (missing optional dependency, upstream
-  removed a row) drops **that operation** with a warning — anchored rows fall back to `end` of
-  the section if only the anchor row is gone but the section exists. The rest of the patch
-  still applies. Never a crash, never a half-rendered page.
+- A missing target, section, or page drops **that operation** with a warning. If an
+  `insertRows` operation's section exists but only its `before:`/`after:` anchor row is gone,
+  the operation instead applies at that section's `end` and emits an anchor-fallback warning.
+  The rest of the patch still applies. Never a crash, never a half-rendered page.
 
 **Application order** is the resolution order from §9, so the composed page is identical on
 every startup regardless of install order or directory enumeration.
@@ -730,13 +739,16 @@ Performed by the C++ registry after discovery, before anything loads:
       two conflicting plugins are both still Active, the later one in resolution order gets
       `Conflict` ("conflicts with *X*").
    The loop is needed because these steps feed each other: if `C → B` and `B` then loses a
-   conflict with `A`, the next iteration must demote `C` to `MissingDependency`. Termination
-   is guaranteed: statuses only ever move from Active to non-Active (monotone), so the loop
-   runs at most N iterations for N plugins.
+   conflict with `A`, the next iteration must demote `C` to `MissingDependency`. A conflict
+   loser remains `Conflict` if its winner is later demoted: resolution never gives a plugin a
+   second activation chance in the same pass. Its status message must say that the named
+   winner is also non-Active, so the retained status is not misleading. Termination is
+   guaranteed because eligibility only moves from Active to non-Active, so the loop runs at
+   most N demotions for N plugins.
 6. **Apply patches** in resolution order, Active plugins only, enforcing the per-operation
    conflict rules from §8. Patch-level conflicts never disable a plugin — only the losing
    operation is dropped, and the Plugins page shows a per-plugin warning list.
-7. **Publish state.** Write the resolved state file for external consumers (§10).
+7. **Publish contract.** Write the resolved contract file for external consumers (§10).
 
 Design choice worth stating: dependency problems disable *plugins*; patch problems drop
 *operations*. This keeps the failure blast radius proportional to the failure.
@@ -748,13 +760,13 @@ The material extractor sets the pattern for plugins that need real compute or sy
 - Native code ships as an **executable inside the plugin directory**, declared under
   `executables` in the manifest. In-shell consumers resolve it via `PluginRegistry`
   (`byName("material-schemes").executable("extractor")`).
-- **Cross-process authority is a state file, not environment variables** (env vars only reach
+- **Cross-process authority is a contract file, not environment variables** (env vars only reach
   processes the shell launched — a `caelestia` command run from a terminal would never see
   them). The registry atomically writes `$XDG_STATE_HOME/caelestia/plugins-state.json` (write
   to temp file in the same directory, fsync, rename) after every resolution pass (§9 step 7)
   **and, debounced, whenever a published selection or parameter changes at runtime** — a user
   flipping the extractor in Nexus must be visible to the next CLI invocation without a shell
-  restart. Contents: active plugins (name, version, trust class, install dir, resolved
+  restart. This **contract file** contains active plugins (name, version, trust class, install dir, resolved
   executable paths, per-executable sha256 hashes matching the approved content digest, §12)
   plus the resolved backend extension points (§10.1). The CLI and any external tool treat
   this file as the single source of truth for "which plugin backends exist, where, and which
@@ -822,7 +834,7 @@ tier outright**: a plugin registering a new extractor via `extendSelect` would w
 value the CLI's whitelist rejects, silently falling back to legacy.
 
 The plugin system therefore requires the boundary to become an explicit, versioned,
-language-neutral contract — the state file from §10, whose backend section is structured so
+language-neutral contract — the contract file from §10, whose backend section is structured so
 the CLI never reads `shell.json` at all:
 
 ```json
@@ -843,7 +855,12 @@ the CLI never reads `shell.json` at all:
             }
         }
     },
-    "plugins": [ { "name": "…", "version": "…", "trustClass": "…", "dir": "…" } ]
+    "plugins": [
+        {
+            "name": "…", "version": "…", "trustClass": "…", "dir": "…",
+            "executables": { "extractor": { "path": "…", "sha256": "…" } }
+        }
+    ]
 }
 ```
 
@@ -857,6 +874,9 @@ Contract rules:
   protocol-defined provider settings. The CLI drops its duplicated default tables, its
   whitelists, *and* its knowledge of `services.dynamicSchemeBackend` — it reads only this
   file. Runtime changes republish the file (§10), so it is current, not startup-stale.
+  Independently of backend providers, every active plugin entry publishes every declared
+  executable as `{ path, sha256 }`; consumers resolving a plain `executables` key use that
+  entry and apply the same hash-mismatch refusal rule.
 - **Open-world validation.** A consumer's valid-value set for an extension point is derived:
   `fallback`/built-ins plus every key in `providers`. `selected` naming no known provider →
   use `fallback` *with a warning*, never silently.
@@ -985,7 +1005,7 @@ Two tiers, deliberately split:
   `ManifestError` (the same traversal rule `resolve()` applies at load time). Non-regular
   files (sockets, FIFOs, devices) are a `ManifestError`. Any changed file — `Service.qml`, a panel QML, an
   executable — invalidates the approval; a manifest-only hash would not, and is therefore not
-  used. Per-executable hashes are additionally published in the state file (§10) so external
+  used. Per-executable hashes are additionally published in the contract file (§10) so external
   consumers can verify the binary they invoke matches what was approved. State the trust model
   plainly in user docs.
 - **Schema-migration scale.** Converting Nexus pages to declarative schema is the riskiest,
@@ -1020,9 +1040,10 @@ resolver (dependencies/conflicts/ordering — building this first is deliberate:
 determinism later is much harder). `plugins.disabled` config, `services/Plugins.qml`,
 About-page count.
 New: `plugin/src/Caelestia/Plugins/{CMakeLists.txt,pluginregistry.hpp/cpp,pluginmanifest.hpp/cpp,pluginresolver.hpp/cpp}`,
-`plugin/src/Caelestia/Config/pluginsconfig.hpp`, `services/Plugins.qml`.
+`plugin/src/Caelestia/Config/pluginsconfig.hpp`, `services/Plugins.qml`,
+`modules/nexus/pages/plugins/PluginsPage.qml`.
 Modified: `plugin/src/Caelestia/CMakeLists.txt`, `Config/config.hpp`,
-`modules/nexus/pages/AboutPage.qml`.
+`modules/nexus/pages/AboutPage.qml`, `PageCompRegistry.qml` (replace the Plugins placeholder).
 Includes the **minimal Plugins page** (replacing the existing PlaceholderComp stub): plugin
 list with statuses, the `AwaitingConsent` approve flow, and enable/disable — it must precede
 every extension point, since Phase 1 onward loads executable-class content and consent needs a
@@ -1058,8 +1079,7 @@ back to built-ins.
 **Phase 4 — Nexus surface.** Complete the Plugins page (capability badges, patch-conflict
 warning lists, on top of the Phase 0 minimal version), whole-page contributions,
 `PluginConfig.qml`.
-New: `modules/nexus/pages/plugins/PluginsPage.qml`, `modules/nexus/PluginNexusPage.qml`,
-`components/misc/PluginConfig.qml`.
+New: `modules/nexus/PluginNexusPage.qml`, `components/misc/PluginConfig.qml`.
 Modified: `PageRegistry.qml`, `PageCompRegistry.qml` + three consumers.
 
 **Phase 5 — Declarative schema + patches (the deep tier).**
@@ -1138,7 +1158,7 @@ where the honest limits are:
 | Lock screen redesign, `lockOnStartup` | ❌ / ⚠️ | Wholesale redesign of a core surface is fork/theme territory, not a plugin; `lockOnStartup`-style options are upstream config contributions |
 | AI assistant sidebar + `ai` config section | ✅ | Panel or dashboard tab + per-plugin config + daemon |
 | New global shortcuts (`caelestia:emoji`, …) | ✅ | IPC/`drawers` fallback + `GlobalShortcut` in plugin service QML |
-| Forked CLI requirement | ✅ mostly | `executables` + the plugins state file (§10) lets the stock CLI invoke plugin backends; features needing new CLI *verbs* still need CLI changes |
+| Forked CLI requirement | ✅ mostly | `executables` + the plugins contract file (§10) lets the stock CLI invoke plugin backends; features needing new CLI *verbs* still need CLI changes |
 
 Reading of the matrix: roughly 80% of what today requires maintaining a 411-commit fork
 becomes installable plugins. The remaining ❌/⚠️ rows share a shape — they *replace or
