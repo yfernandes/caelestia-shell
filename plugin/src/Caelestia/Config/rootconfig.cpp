@@ -69,27 +69,7 @@ void RootConfig::setupFileBackend(const QString& path, const QString& screen) {
 
     m_saveTimer->setSingleShot(true);
     m_saveTimer->setInterval(500);
-    connect(m_saveTimer, &QTimer::timeout, this, [this] {
-        QDir().mkpath(QFileInfo(m_filePath).absolutePath());
-
-        QFile file(m_filePath);
-        if (!file.open(QIODevice::WriteOnly)) {
-            auto err = QStringLiteral("Failed to write %1: %2").arg(m_filePath, file.errorString());
-            qCWarning(lcConfig, "%s", qUtf8Printable(err));
-            emit saveFailed(err, m_screen);
-            return;
-        }
-
-        auto json = toJsonObject();
-        file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
-        file.close();
-
-        // Update watches — save may have created directories
-        updateWatch();
-        m_lastSignature = fileSignature();
-
-        emit saved(m_screen);
-    });
+    connect(m_saveTimer, &QTimer::timeout, this, &RootConfig::writeToFile);
 
     m_cooldownTimer->setSingleShot(true);
     m_cooldownTimer->setInterval(2000);
@@ -197,6 +177,29 @@ void RootConfig::saveToFile() {
     m_cooldownTimer->start();
 }
 
+bool RootConfig::writeToFile() {
+    QDir().mkpath(QFileInfo(m_filePath).absolutePath());
+
+    QFile file(m_filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        auto err = QStringLiteral("Failed to write %1: %2").arg(m_filePath, file.errorString());
+        qCWarning(lcConfig, "%s", qUtf8Printable(err));
+        emit saveFailed(err, m_screen);
+        return false;
+    }
+
+    const auto json = toJsonObject();
+    file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
+    file.close();
+
+    // Update watches — save may have created directories.
+    updateWatch();
+    m_lastSignature = fileSignature();
+
+    emit saved(m_screen);
+    return true;
+}
+
 std::optional<QString> RootConfig::reloadFromFile() {
     m_lastSignature = fileSignature();
 
@@ -251,6 +254,16 @@ std::optional<QString> RootConfig::reloadFromFile() {
 
 void RootConfig::save() {
     saveToFile();
+}
+
+void RootConfig::saveNow() {
+    if (!m_saveTimer)
+        return;
+
+    m_saveTimer->stop();
+    m_recentlySaved = true;
+    m_cooldownTimer->start();
+    static_cast<void>(writeToFile());
 }
 
 void RootConfig::emitLoadSignals(const std::optional<QString>& result, bool emitLoaded) {

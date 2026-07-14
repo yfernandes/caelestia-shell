@@ -278,7 +278,6 @@ StyledRect {
                     text: "CH" + (strip.channelIndex + 1)
                     color: Colours.palette.m3onSurfaceVariant
                     font: Tokens.font.body.small
-                    font.weight: 700
                 }
 
                 StyledText {
@@ -292,7 +291,6 @@ StyledRect {
                     text: root.kindShortLabel(strip.kind)
                     color: strip.bound ? strip.accent : Colours.palette.m3outlineVariant
                     font: Tokens.font.body.small
-                    font.weight: 700
                     elide: Text.ElideRight
                 }
             }
@@ -338,7 +336,6 @@ StyledRect {
                         ? `${strip.channel.cross_sink_a_name || "A"}↔${strip.channel.cross_sink_b_name || "B"}`
                         : `${Math.round((strip.channel.knob ?? 0) / 127 * 100)}%`
                     color: Colours.palette.m3onSurface
-                    font.weight: 700
                     font: Tokens.font.body.small
                 }
 
@@ -419,7 +416,6 @@ StyledRect {
                 StyledText {
                     text: root.volumeText(strip.channel.actual_volume ?? 0)
                     color: strip.muted ? Colours.palette.m3error : Colours.palette.m3onSurface
-                    font.weight: 700
                     font: Tokens.font.body.small
                 }
             }
@@ -495,8 +491,6 @@ StyledRect {
             text: btn.label
             color: btn.active ? btn.activeTextColor : Colours.palette.m3onSurfaceVariant
             font: Tokens.font.body.small
-            font.weight: btn.active ? 700 : 400
-            font.family: "monospace"
         }
 
         MouseArea {
@@ -678,7 +672,6 @@ StyledRect {
             text: badge.text
             color: Colours.palette.m3onTertiaryContainer
             font: Tokens.font.body.small
-            font.weight: 800
             elide: Text.ElideRight
         }
     }

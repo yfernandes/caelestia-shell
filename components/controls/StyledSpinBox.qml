@@ -61,6 +61,8 @@ DoubleSpinBox {
     down.indicator: IconButton {
         id: downButton
 
+        z: 1
+
         topRightRadius: pressed ? Tokens.rounding.small : Tokens.rounding.extraSmall
         bottomRightRadius: pressed ? Tokens.rounding.small : Tokens.rounding.extraSmall
 
@@ -95,6 +97,7 @@ DoubleSpinBox {
     up.indicator: IconButton {
         id: upButton
 
+        z: 1
         anchors.right: parent.right
 
         topLeftRadius: pressed ? Tokens.rounding.small : Tokens.rounding.extraSmall

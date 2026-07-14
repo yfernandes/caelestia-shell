@@ -2,6 +2,7 @@
 /result
 /.qmlls.ini
 build/
+build-user/
 .cache/
 logs
 __pycache__/

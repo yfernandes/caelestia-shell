@@ -18,6 +18,7 @@
   rubik,
   nerd-fonts,
   qt6,
+  abseil-cpp,
   quickshell,
   aubio,
   libcava,
@@ -74,10 +75,15 @@
     name = "caelestia-extras${lib.optionalString debug "-debug"}";
     src = lib.fileset.toSource {
       root = ./..;
-      fileset = lib.fileset.union ./../CMakeLists.txt ./../extras;
+      fileset = lib.fileset.unions [
+        ./../CMakeLists.txt
+        ./../extras
+        ./../reference/material-color-utilities
+      ];
     };
 
     nativeBuildInputs = [cmake ninja];
+    buildInputs = [qt6.qtbase abseil-cpp];
 
     cmakeFlags =
       [

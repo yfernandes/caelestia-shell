@@ -24,6 +24,7 @@ public:
     [[nodiscard]] bool recentlySaved() const;
 
     Q_INVOKABLE void save();
+    Q_INVOKABLE void saveNow();
     Q_INVOKABLE void reload();
 
 signals:
@@ -38,6 +39,7 @@ private:
     void emitLoadSignals(const std::optional<QString>& result, bool emitLoaded = true);
     void updateWatch();
     void onWatcherEvent();
+    [[nodiscard]] bool writeToFile();
     // Signature of the target file (existence + size + mtime) used to ignore
     // directory events caused by unrelated sibling files.
     [[nodiscard]] QString fileSignature() const;
