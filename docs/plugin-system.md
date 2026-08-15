@@ -237,7 +237,9 @@ same privileges as a service; a consent model that waved UI QML through would be
 Consent is enforced at resolution time, not at UI time: an executable-class plugin without a
 valid acknowledgement resolves to `AwaitingConsent` (§9 step 2) and exposes **nothing** — no
 services, no components, no patches — until approved on the Plugins page. Data-only plugins
-activate immediately with a badge.
+activate immediately with a badge. Approved executable-class plugins are exposed only from
+the immutable content-addressed snapshot described in §12, so lazy loading cannot race a
+later edit to the install directory.
 
 ### 4.2 Command verb grammar
 
@@ -327,7 +329,7 @@ Singleton {
     readonly property var barWidgets          // ({ id: handle }) — lazily resolved, cached
     readonly property var quickToggles        // ({ id: handle })
     readonly property list<var> panels        // [{ name, plugin, handle, position }]
-    readonly property list<var> launcherActions
+    readonly property list<var> launcherActions // explicit actions + synthesized provider actions
     readonly property list<var> launcherProviders // [{ action, meta, handle }]
     readonly property list<var> dashboardTabs // [{ meta, handle }]
     readonly property list<var> desktopWidgets// [{ id, plugin, handle, position }]
@@ -345,7 +347,8 @@ owners), because `Loader` performs its own instantiation and must not be mixed w
 `createObject()`:
 
 **`PluginComponentHandle`** — one per manifest entry, owned by the aggregator. Validates the
-entry, resolves it to a file URL (dir-escape checked), and tracks:
+entry, resolves it to a file URL inside the approved content snapshot (dir-escape checked),
+and tracks:
 
 ```
 Idle ──▶ Loading ──▶ Ready | Failed
@@ -448,15 +451,17 @@ gets the same fallback.
 
 **Launcher actions** — `modules/launcher/services/Actions.qml` concatenates
 `Plugins.launcherActions` onto the config-driven model, honoring the same `enabled`/`dangerous`
-filtering, tagged with the plugin name for display.
+filtering, tagged with the plugin name for display. The aggregator adds one synthesized action
+for every launcher provider, with the provider's display metadata and command
+`["autocomplete", provider.action]`; these generated entries are part of
+`Plugins.launcherActions` alongside explicitly declared actions.
 
 **Launcher providers (searchable modes)** — the launcher's modes (`=` calc,
 `>scheme`, `>wallpaper`, …) are a prefix dispatch in `modules/launcher/AppList.qml`
 (lines ~50–109): each mode pairs a `Searcher` singleton (`Apps`, `Actions`, `Schemes`,
 `M3Variants`) with a delegate list. This is what an emoji picker, clipboard history, or window
-switcher plugs into. A provider registers an action name (entered via the existing
-`autocomplete <action>` verb, so it automatically appears as a launcher action too) and a list
-component:
+switcher plugs into. A provider registers an action name and a list component. The synthesized
+`["autocomplete", action]` entry above makes the mode appear in launcher actions as well:
 
 - Contract: the provider's list view receives `query: string` (the search text after the
   prefix) and a `close()` callable via `setSource` properties (§5.2); it owns its own model,
@@ -608,8 +613,9 @@ Schema elements:
 - **`bind`** — where the value lives:
   - `shell:<path>` — a property path into `GlobalConfig` (walkable in JS because every config
     key is a `Q_PROPERTY`; a small resolver handles get/set + change signal subscription).
-  - `plugin:<name>:<key>` — a key in that plugin's own `config.json` (§11). This is how deep
-    plugins get settings UI without touching the typed C++ schema.
+  - `plugin:<name>:<key>` — a key in that plugin's per-plugin settings file at
+    `~/.config/caelestia/plugin-config/<name>.json` (§11). This is how deep plugins get
+    settings UI without touching the typed C++ schema.
   - A value binding must supply **read + change-notify + write**. `shell:` and `plugin:`
     binds provide all three intrinsically (Q_PROPERTY notify signals / watched JSON). For
     values not backed by config, a row uses the split form:
@@ -650,7 +656,8 @@ toast naming the plugin at fault), never a broken page.
 
 ## 8. Page patches — how deep plugins modify existing pages
 
-A `nexusPatches` file is a list of operations addressed by stable ids:
+A `nexusPatches` file is an object naming one target page and containing an `operations` list
+addressed by stable ids:
 
 ```json
 {
@@ -692,6 +699,21 @@ A `nexusPatches` file is a list of operations addressed by stable ids:
 | `setRowProperty` | Change a property of an existing row (e.g. add a `visibleWhen`) | **Exclusive**: at most one plugin may touch a given `(row, property)`. Second claimant's operation is dropped, both plugins stay loaded, warning surfaced on the Plugins page. |
 | `replaceRow` / `removeRow` | Substitute or hide an existing row | **Exclusive per row id**, same rule. Discouraged in docs; exists because "Dark theme becomes legacy-only" is a real need (`setRowProperty` with `visibleWhen` covers that case — `replaceRow` is the last resort). |
 
+Across plugins, cross-operation conflicts are won by the plugin earlier in resolution order;
+the later plugin's operation is dropped with a warning. Operations from one plugin retain
+their declared order and are validated together:
+
+| Earlier/later operations on the same row | Result |
+| --- | --- |
+| `setRowProperty(p)` + `setRowProperty(q)` | Both apply when `p != q`; the later operation is dropped when `p == q`. |
+| `extendSelect` + `extendSelect` | Merge options; for a duplicate option value, drop the later option. |
+| `replaceRow` or `removeRow` + any `setRowProperty`, `extendSelect`, `replaceRow`, or `removeRow` | Whole-row exclusivity: the later operation is dropped, regardless of which operation is destructive. |
+
+`setRowProperty` may not write an extensible select's `options`; plugins must use
+`extendSelect`, so option merging cannot be bypassed. Merely anchoring `insertRows` to a row
+does not claim or mutate that row; if another plugin removes it, the documented fallback-to-end
+rule applies.
+
 **Addressing rules:**
 
 - Ids created by a plugin are implicitly namespaced `<plugin>.<id>` internally; plugins can
@@ -706,11 +728,12 @@ A `nexusPatches` file is a list of operations addressed by stable ids:
 **Application order** is the resolution order from §9, so the composed page is identical on
 every startup regardless of install order or directory enumeration.
 
-The proof case: the entire "Dynamic colour scheme" material half of commit `6338a8fb`'s
-`WallpaperAndStyle.qml` diff is expressible as one `extendSelect` + one `insertRows` (three
-rows with `visibleWhen: material`) — and the two "legacy-only" visibility changes to
-pre-existing rows are the built-in schema's own `visibleWhen`, not a patch at all, once the
-extractor select exists in the base schema.
+The proof case splits cleanly: the base schema contains the neutral "Dynamic colour scheme"
+section, its extensible extractor select, and the legacy rows/options only. The material
+plugin contributes its option plus material-specific rows as one `extendSelect` + one
+`insertRows` (three rows with `visibleWhen: material`). The two "legacy-only" visibility
+changes to pre-existing rows belong to the neutral base schema's `visibleWhen`, because they
+describe when legacy controls apply rather than material-plugin UI.
 
 ## 9. Dependency and conflict resolution
 
@@ -731,20 +754,26 @@ Performed by the C++ registry after discovery, before anything loads:
    position (needed for display and diagnostics). This is the **resolution order** used for
    load order, patch application, and every "multiple plugins did X" tie-break. It is computed
    once from the graph alone — statuses never change it — and is fully deterministic.
-5. **Status fixed point.** Repeat until no status changes:
-   a. *Dependency propagation:* a candidate plugin whose required dependency is missing,
-      version-incompatible, or currently non-Active gets `MissingDependency` (with a chain
-      explanation: "requires *scheme-tools ≥ 2.0*, which lost a conflict with *X*").
-   b. *Conflicts:* `conflicts` is **symmetric** — a declaration by either side binds both. If
-      two conflicting plugins are both still Active, the later one in resolution order gets
-      `Conflict` ("conflicts with *X*").
+5. **Status fixed point.** Repeat deterministic rounds until no status changes. Each substep
+   reads one immutable status snapshot, computes all losers, then applies those demotions
+   simultaneously:
+   a. *Dependency propagation:* from the round-start snapshot, every candidate plugin whose
+      required dependency is missing, version-incompatible, or non-Active is collected and
+      then demoted to `MissingDependency` together (with a chain explanation: "requires
+      *scheme-tools ≥ 2.0*, which lost a conflict with *X*").
+   b. *Conflicts:* take a fresh snapshot after dependency demotions. `conflicts` is
+      **symmetric** — a declaration by either side binds both. For every conflicting pair
+      whose endpoints are Active in that snapshot, collect the later endpoint in resolution
+      order; demote the union of collected endpoints to `Conflict` simultaneously. Thus for
+      `A < B < C` with `A↔B` and `B↔C`, both `B` and `C` lose regardless of pair iteration
+      order.
    The loop is needed because these steps feed each other: if `C → B` and `B` then loses a
    conflict with `A`, the next iteration must demote `C` to `MissingDependency`. A conflict
-   loser remains `Conflict` if its winner is later demoted: resolution never gives a plugin a
-   second activation chance in the same pass. Its status message must say that the named
-   winner is also non-Active, so the retained status is not misleading. Termination is
-   guaranteed because eligibility only moves from Active to non-Active, so the loop runs at
-   most N demotions for N plugins.
+   loser remains `Conflict` if its winner is demoted in the same or a later round: resolution
+   never gives a plugin a second activation chance in the same pass. Its status message must
+   say that the named winner is also non-Active, so the retained status is not misleading.
+   Termination is guaranteed because eligibility only moves from Active to non-Active, so the
+   loop runs at most N demotions for N plugins.
 6. **Apply patches** in resolution order, Active plugins only, enforcing the per-operation
    conflict rules from §8. Patch-level conflicts never disable a plugin — only the losing
    operation is dropped, and the Plugins page shows a per-plugin warning list.
@@ -758,7 +787,8 @@ Design choice worth stating: dependency problems disable *plugins*; patch proble
 The material extractor sets the pattern for plugins that need real compute or system access:
 
 - Native code ships as an **executable inside the plugin directory**, declared under
-  `executables` in the manifest. In-shell consumers resolve it via `PluginRegistry`
+  `executables` in the manifest. For approved executable-class plugins, in-shell consumers
+  resolve the snapshotted copy via `PluginRegistry`
   (`byName("material-schemes").executable("extractor")`).
 - **Cross-process authority is a contract file, not environment variables** (env vars only reach
   processes the shell launched — a `caelestia` command run from a terminal would never see
@@ -844,6 +874,12 @@ the CLI never reads `shell.json` at all:
         "scheme.extractor": {
             "selected": "material",
             "fallback": "legacy",
+            "builtins": {
+                "legacy": {
+                    "protocol": "caelestia.scheme-extractor/1",
+                    "executable": { "path": "/usr/lib/caelestia/material-extractor", "sha256": "…" }
+                }
+            },
             "parameters": { "requestedMode": "auto", "mode": "dark", "legacyFlavour": "default" },
             "providers": {
                 "material": {
@@ -868,17 +904,22 @@ Contract rules:
 
 - **The contract file is complete for its consumers.** Each extension point publishes the
   *effective* selection (defaults already applied by the shell — an absent or never-saved
-  `shell.json` key is the shell's problem, resolved before publication), the built-in
-  `fallback`, the shell-owned `parameters` relevant to the point, and the full provider map:
-  plugin, protocol id, hash-verified executable, and the provider's `configPath` for
-  protocol-defined provider settings. The CLI drops its duplicated default tables, its
+  `shell.json` key is the shell's problem, resolved before publication), every shell-owned
+  selection and its point-specific invocation metadata in the `builtins` map, the `fallback`
+  (which must be a key in `builtins`), the shell-owned `parameters` relevant to the point, and
+  the full plugin provider map: plugin, protocol id, hash-verified executable, and the
+  provider's `configPath` for protocol-defined provider settings. For an executable-backed
+  built-in, the built-in entry publishes the same protocol and hash-verified executable shape
+  without `plugin` or `configPath`; other extension-point protocols define their equivalent
+  complete built-in metadata. The CLI drops its duplicated default tables, its
   whitelists, *and* its knowledge of `services.dynamicSchemeBackend` — it reads only this
   file. Runtime changes republish the file (§10), so it is current, not startup-stale.
   Independently of backend providers, every active plugin entry publishes every declared
   executable as `{ path, sha256 }`; consumers resolving a plain `executables` key use that
   entry and apply the same hash-mismatch refusal rule.
 - **Open-world validation.** A consumer's valid-value set for an extension point is derived:
-  `fallback`/built-ins plus every key in `providers`. `selected` naming no known provider →
+  every key in `builtins` plus every key in `providers`. Consumers carry no built-in value
+  table of their own. `selected` naming neither a published built-in nor a known provider →
   use `fallback` *with a warning*, never silently.
 - **Protocols are specs, not strings.** A protocol id like `caelestia.scheme-extractor/1`
   names a versioned document (in this repo, `docs/protocols/<name>.md`) that fixes the argv
@@ -1003,11 +1044,22 @@ Two tiers, deliberately split:
   revoking consent on unchanged code.) Symlinks: resolved; a target
   inside the plugin directory is hashed as the file it points to, a target outside is a
   `ManifestError` (the same traversal rule `resolve()` applies at load time). Non-regular
-  files (sockets, FIFOs, devices) are a `ManifestError`. Any changed file — `Service.qml`, a panel QML, an
-  executable — invalidates the approval; a manifest-only hash would not, and is therefore not
-  used. Per-executable hashes are additionally published in the contract file (§10) so external
-  consumers can verify the binary they invoke matches what was approved. State the trust model
-  plainly in user docs.
+  files (sockets, FIFOs, devices) are a `ManifestError`.
+
+  Approval also seals the executable-class plugin into a content-addressed snapshot at
+  `$XDG_CACHE_HOME/caelestia/plugin-snapshots/<digest>/`. The registry copies into a temporary
+  sibling directory while hashing the copied bytes, verifies that the completed snapshot has
+  the acknowledged digest, makes it read-only, fsyncs it, and atomically renames it into place;
+  an existing snapshot is reverified before reuse. All component handles, service URLs,
+  daemon commands, and published executable paths resolve against that snapshot, never the
+  mutable install directory. Lazy loading therefore executes exactly the bytes approved at
+  resolution time. An install-directory edit — `Service.qml`, a panel QML, an executable, or
+  any other included file — produces a new digest on the next rescan/reload and returns the
+  plugin to `AwaitingConsent`; it cannot change the already active snapshot. A manifest-only
+  hash would not provide this guarantee and is therefore not used. Per-executable hashes are
+  additionally published in the contract file (§10) so external consumers can verify the
+  snapshotted binary they invoke matches what was approved. State the trust model plainly in
+  user docs.
 - **Schema-migration scale.** Converting Nexus pages to declarative schema is the riskiest,
   largest work item. Mitigation: it's incremental per page (§7.1); start with
   Wallpaper & style (the proven deep-plugin target), leave bespoke pages hand-written until a
@@ -1038,7 +1090,7 @@ Two tiers, deliberately split:
 **Phase 0 — Core.** C++ registry with discovery, manifest validation, and the full §9
 resolver (dependencies/conflicts/ordering — building this first is deliberate: retrofitting
 determinism later is much harder). `plugins.disabled` config, `services/Plugins.qml`,
-About-page count.
+content-addressed approval snapshots (§12), About-page count.
 New: `plugin/src/Caelestia/Plugins/{CMakeLists.txt,pluginregistry.hpp/cpp,pluginmanifest.hpp/cpp,pluginresolver.hpp/cpp}`,
 `plugin/src/Caelestia/Config/pluginsconfig.hpp`, `services/Plugins.qml`,
 `modules/nexus/pages/plugins/PluginsPage.qml`.
@@ -1071,9 +1123,9 @@ daemons, executables.** `modules/launcher/services/Actions.qml` (concat);
 `modules/launcher/AppList.qml` + `ContentList.qml` (provider mode fallback);
 `modules/dashboard/Content.qml` (tab concat); `modules/background/` (desktop widget repeater);
 `services/Plugins.qml` (instantiate services; `Process` for managed daemons); executable
-resolution + atomic state-file publication for the CLI (§10). Companion change in the CLI
+resolution + atomic contract-file publication for the CLI (§10). Companion change in the CLI
 repo: replace hardcoded backend whitelists and env-var executable discovery with
-state-file-derived validation (§10.1) — without it, plugin-provided backends silently fall
+contract-file-derived validation (§10.1) — without it, plugin-provided backends silently fall
 back to built-ins.
 
 **Phase 4 — Nexus surface.** Complete the Plugins page (capability badges, patch-conflict
@@ -1086,11 +1138,13 @@ Modified: `PageRegistry.qml`, `PageCompRegistry.qml` + three consumers.
 New: `modules/nexus/schema/SchemaPage.qml`, `SchemaSection.qml`, row `DelegateChooser`, the
 bind resolver, verb dispatcher, patch applier (C++ side: `NexusSchema` in the registry);
 `modules/nexus/schema/wallpaper-and-style.json` as the first migrated page.
-Migration proof: rebuild the current Wallpaper & style settings sections (including the whole
-"Dynamic colour scheme" section from commit `6338a8fb`) as base schema — pixel-equivalent
-result, `WallItem` grid stays a `custom` row.
-Patch proof: express the material extractor's UI additions as a `nexusPatches` file from a
-fixture plugin and verify the composed page matches the current hand-written one.
+Migration proof: rebuild the current Wallpaper & style settings sections as a neutral base
+schema — including the "Dynamic colour scheme" section's extensible extractor select and
+legacy rows/options, but excluding material-specific options and rows. `WallItem` grid stays
+a `custom` row.
+Patch proof: supply the material option and material-specific rows from commit `6338a8fb` as
+a `nexusPatches` file from a fixture plugin and verify the composed page is pixel-equivalent
+to the current hand-written one.
 
 **Phase 6 — Reference plugins.**
 - smcmixer migrated to a real plugin (panel `smcMixer` at `bottom`, launcher action, Nexus
@@ -1110,14 +1164,19 @@ fixture plugin and verify the composed page matches the current hand-written one
    manifest/QML → toast, shell intact.
 2. **Automated resolver + patch-applier tests** (fixture manifests, run in CI, not by hand):
    required-missing, optional-missing, version-too-old, two-plugin cycle, declared `conflicts`
-   pair (declared by one side only), conflict-loss cascading into dependents (fixed point),
-   two plugins patching the same row property (exclusive-op conflict), two plugins extending
-   the same select (merge), anchor to a removed row (fallback-to-end), consent classification
-   of a patch containing `exec` verbs. Each asserts the specified status/warning and a
-   byte-identical composed page model across shuffled discovery orders.
+   pair (declared by one side only), overlapping conflicts (`A↔B`, `B↔C`) under shuffled pair
+   enumeration, conflict-loss cascading into dependents (fixed point), two plugins patching
+   the same row property (exclusive-op conflict), destructive-vs-property and
+   destructive-vs-`extendSelect` cross-operation conflicts, two plugins extending the same
+   select (merge), anchor to a removed row (fallback-to-end), consent classification of a
+   patch containing `exec` verbs. Each asserts the specified status/warning and a
+   byte-identical composed page model across shuffled discovery and pair iteration orders.
    Plus an **async component-failure test**: a plugin QML file that fails at load, one that
    fails at instantiation (`createObject` → null), and one that stays `Loading` — each must
    end in the `Failed` state with the slot empty and the shell responsive.
+   Plus a **consent snapshot test**: approve a lazy UI component, mutate its install-directory
+   QML before first use, and assert the approved snapshot's original bytes load; after rescan,
+   assert the changed digest yields `AwaitingConsent` and no changed bytes execute.
 3. **Schema equivalence**: migrated Wallpaper & style renders equivalent to the current QML
    (manual visual pass + qmllint); material patch fixture composes to match commit
    `6338a8fb`'s hand-written result.
@@ -1127,9 +1186,11 @@ fixture plugin and verify the composed page matches the current hand-written one
    `scripts/qml-lint-conventions.py` pass on all new QML.
 6. **Contract tests** (§10.1): resolver output for fixture plugin sets validates against the
    canonical contract JSON Schema; CLI golden fixtures cover selected-provider dispatch,
-   unknown-selected → fallback + warning, unknown-protocol → fallback + warning, hash
-   mismatch → refusal, missing contract file → built-in fallback, and minor/major
-   `contractVersion` handling. Run in both CIs while the repos are split.
+   a selected non-fallback key from `builtins` (including its invocation metadata),
+   unknown-selected → fallback + warning,
+   unknown-protocol → fallback + warning, hash mismatch → refusal, missing contract file →
+   built-in fallback, and minor/major `contractVersion` handling. Run in both CIs while the
+   repos are split.
    Plus a **runtime republication test**: with `requestedMode` held at `auto`, change the
    effective scheme mode (wallpaper-driven light↔dark flip) and assert the contract file's
    `mode` republishes from `light` to `dark` and the next CLI invocation receives the new
@@ -1144,7 +1205,7 @@ where the honest limits are:
 | Fork feature | As a plugin | Mechanism |
 | --- | --- | --- |
 | Emoji picker, clipboard history, window switcher, keybinds list | ✅ | Launcher provider (+ launcher action via `autocomplete`) |
-| GIF/video wallpapers with auto-pause | ✅ (deep) | Backend choice extension point on the wallpaper renderer (same pattern as the scheme extractor: `extensible` select + `plugin:` binds), renderer as a plugin component |
+| GIF/video wallpapers with auto-pause | ⚠️ | Requires a shell-owned wallpaper-renderer component slot that this design does not define; an executable backend alone cannot replace the renderer |
 | Wallhaven integration | ✅ | Launcher provider or Nexus page + daemon/executable for fetching |
 | Bad Apple shader easter egg | ✅ | Quick toggle + desktop widget (shader component on the background layer) |
 | Chrome Dino in the notification dock | ⚠️ | Needs a content slot inside an existing panel — possible as a plugin *panel* of its own; patching arbitrary QML panel internals is deliberately unsupported |
