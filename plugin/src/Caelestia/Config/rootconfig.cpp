@@ -176,7 +176,7 @@ bool RootConfig::writeToFile() {
         return false;
     }
 
-    const auto json = toJsonObject();
+    const auto json = toJson().toObject();
     file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
     file.close();
 
