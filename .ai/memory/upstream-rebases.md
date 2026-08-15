@@ -7,3 +7,8 @@
 - Verify the shell-only CMake build after resolving conflicts.
 - Inspect `git remote -v` and branch relationships before recommending a
   force-push; use `--force-with-lease` for the rewritten fork branch.
+- Keep each remote's fetch namespace distinct: `origin` fetches to
+  `refs/remotes/origin/*`, while canonical `upstream` fetches to
+  `refs/remotes/upstream/*`. If `git pull upstream main` unexpectedly moves
+  `origin/main`, repair `remote.upstream.fetch`, fetch both remotes again, and
+  confirm the rebase target is `upstream/main`.
