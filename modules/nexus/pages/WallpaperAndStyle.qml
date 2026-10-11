@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import Quickshell
 import Caelestia.Components
 import Caelestia.Config
+import Caelestia.I18n
 import qs.components
 import qs.components.controls
 import qs.components.images
@@ -15,31 +16,31 @@ PageBase {
     id: root
 
     readonly property list<MenuItem> extractorItems: [
-        MenuItem { text: qsTr("Legacy") },
-        MenuItem { text: qsTr("Material Color Utilities") }
+        MenuItem { text: Tr.tr("Legacy") },
+        MenuItem { text: Tr.tr("Material Color Utilities") }
     ]
     readonly property list<string> extractorValues: ["legacy", "material"]
     readonly property list<MenuItem> modeItems: [
-        MenuItem { text: qsTr("Auto") },
-        MenuItem { text: qsTr("Light") },
-        MenuItem { text: qsTr("Dark") }
+        MenuItem { text: Tr.tr("Auto") },
+        MenuItem { text: Tr.tr("Light") },
+        MenuItem { text: Tr.tr("Dark") }
     ]
     readonly property list<string> modeValues: ["auto", "light", "dark"]
     readonly property list<MenuItem> legacyFlavourItems: [
-        MenuItem { text: qsTr("Standard") },
-        MenuItem { text: qsTr("High") }
+        MenuItem { text: Tr.tr("Standard") },
+        MenuItem { text: Tr.tr("High") }
     ]
     readonly property list<string> legacyFlavourValues: ["default", "hard"]
     readonly property list<MenuItem> materialVariantItems: [
-        MenuItem { text: qsTr("Tonal spot") },
-        MenuItem { text: qsTr("Vibrant") },
-        MenuItem { text: qsTr("Expressive") },
-        MenuItem { text: qsTr("Fidelity") },
-        MenuItem { text: qsTr("Fruit salad") },
-        MenuItem { text: qsTr("Monochrome") },
-        MenuItem { text: qsTr("Neutral") },
-        MenuItem { text: qsTr("Rainbow") },
-        MenuItem { text: qsTr("Content") }
+        MenuItem { text: Tr.tr("Tonal spot") },
+        MenuItem { text: Tr.tr("Vibrant") },
+        MenuItem { text: Tr.tr("Expressive") },
+        MenuItem { text: Tr.tr("Fidelity") },
+        MenuItem { text: Tr.tr("Fruit salad") },
+        MenuItem { text: Tr.tr("Monochrome") },
+        MenuItem { text: Tr.tr("Neutral") },
+        MenuItem { text: Tr.tr("Rainbow") },
+        MenuItem { text: Tr.tr("Content") }
     ]
     readonly property list<string> materialVariantValues: ["tonalspot", "vibrant", "expressive", "fidelity", "fruitsalad", "monochrome", "neutral", "rainbow", "content"]
     function itemFor(values: list<string>, items: list<MenuItem>, value: string): MenuItem {
@@ -51,7 +52,7 @@ PageBase {
         Quickshell.execDetached([Quickshell.env("CAELESTIA_CLI") || "caelestia", "scheme", "refresh"]);
     }
 
-    title: qsTr("Wallpaper & style")
+    title: Tr.tr("Wallpaper & style")
 
     ColumnLayout {
         anchors.horizontalCenter: parent.horizontalCenter
@@ -93,7 +94,7 @@ PageBase {
 
                     StyledText {
                         Layout.alignment: Qt.AlignHCenter
-                        text: qsTr("Wallpaper disabled")
+                        text: Tr.tr("Wallpaper disabled")
                         color: Colours.palette.m3onSurfaceVariant
                         font: Tokens.font.body.large
                     }
@@ -184,7 +185,7 @@ PageBase {
 
             IconTextButton {
                 icon: "wallpaper"
-                text: qsTr("Wallpapers")
+                text: Tr.tr("Wallpapers")
                 font: Tokens.font.body.large
                 isRound: true
                 shapeMorph: true
@@ -197,7 +198,7 @@ PageBase {
 
             IconTextButton {
                 icon: "palette"
-                text: qsTr("Colours")
+                text: Tr.tr("Colours")
                 font: Tokens.font.body.large
                 isRound: true
                 shapeMorph: true
@@ -209,7 +210,7 @@ PageBase {
 
             IconTextButton {
                 icon: "refresh"
-                text: qsTr("Refresh scheme")
+                text: Tr.tr("Refresh scheme")
                 font: Tokens.font.body.large
                 isRound: true
                 shapeMorph: true
@@ -222,7 +223,7 @@ PageBase {
 
         ToggleRow {
             first: true
-            text: qsTr("Display wallpaper")
+            text: Tr.tr("Display wallpaper")
             checked: Config.background.wallpaperEnabled
             onToggled: GlobalConfig.background.wallpaperEnabled = checked
         }
@@ -231,20 +232,20 @@ PageBase {
             Layout.topMargin: Tokens.spacing.extraSmall / 2 - parent.spacing
 
             last: true
-            text: qsTr("Transparency")
-            subtext: qsTr("Base %1, layers %2").arg(Colours.transparency.base).arg(Colours.transparency.layers)
+            text: Tr.tr("Transparency")
+            subtext: Tr.tr("Base %1, layers %2").arg(Colours.transparency.base).arg(Colours.transparency.layers)
             checked: Colours.transparency.enabled
             onToggled: GlobalConfig.appearance.transparency.enabled = checked
         }
 
         SectionHeader {
-            text: qsTr("Dynamic colour scheme")
+            text: Tr.tr("Dynamic colour scheme")
         }
 
         SelectRow {
             first: true
-            label: qsTr("Extractor")
-            subtext: qsTr("Colour model used for dynamic schemes")
+            label: Tr.tr("Extractor")
+            subtext: Tr.tr("Colour model used for dynamic schemes")
             menuItems: root.extractorItems
             active: root.itemFor(root.extractorValues, root.extractorItems, GlobalConfig.services.dynamicSchemeBackend)
             onSelected: item => {
@@ -258,8 +259,8 @@ PageBase {
             Layout.topMargin: GlobalConfig.services.dynamicSchemeBackend === "legacy" ? -parent.spacing : 0
             Layout.preferredHeight: visible ? implicitHeight : 0
             visible: GlobalConfig.services.dynamicSchemeBackend === "legacy"
-            label: qsTr("Surface contrast")
-            subtext: qsTr("High darkens generated surfaces")
+            label: Tr.tr("Surface contrast")
+            subtext: Tr.tr("High darkens generated surfaces")
             menuItems: root.legacyFlavourItems
             active: root.itemFor(root.legacyFlavourValues, root.legacyFlavourItems, GlobalConfig.services.dynamicSchemeLegacyFlavour)
             onSelected: item => {
@@ -274,7 +275,7 @@ PageBase {
             Layout.preferredHeight: visible ? implicitHeight : 0
             visible: GlobalConfig.services.dynamicSchemeBackend === "legacy"
             last: true
-            text: qsTr("Dark theme")
+            text: Tr.tr("Dark theme")
             checked: !Colours.light
             onToggled: Colours.setMode(checked ? "dark" : "light")
         }
@@ -283,8 +284,8 @@ PageBase {
             Layout.topMargin: visible ? -parent.spacing : 0
             Layout.preferredHeight: visible ? implicitHeight : 0
             visible: GlobalConfig.services.dynamicSchemeBackend === "material"
-            label: qsTr("Theme mode")
-            subtext: qsTr("Auto follows the wallpaper; light and dark are fixed")
+            label: Tr.tr("Theme mode")
+            subtext: Tr.tr("Auto follows the wallpaper; light and dark are fixed")
             menuOnTop: true
             menuItems: root.modeItems
             active: root.itemFor(root.modeValues, root.modeItems, GlobalConfig.services.dynamicSchemeMode)
@@ -298,8 +299,8 @@ PageBase {
             Layout.topMargin: visible ? -parent.spacing : 0
             Layout.preferredHeight: visible ? implicitHeight : 0
             visible: GlobalConfig.services.dynamicSchemeBackend === "material"
-            label: qsTr("Material variant")
-            subtext: qsTr("Palette strategy for the Material extractor")
+            label: Tr.tr("Material variant")
+            subtext: Tr.tr("Palette strategy for the Material extractor")
             menuItems: root.materialVariantItems
             active: root.itemFor(root.materialVariantValues, root.materialVariantItems, GlobalConfig.services.materialSchemeVariant)
             onSelected: item => {
@@ -313,8 +314,8 @@ PageBase {
             Layout.preferredHeight: visible ? implicitHeight : 0
             visible: GlobalConfig.services.dynamicSchemeBackend === "material"
             last: true
-            label: qsTr("Material contrast")
-            subtext: qsTr("Contrast adjustment from -1.0 to 1.0")
+            label: Tr.tr("Material contrast")
+            subtext: Tr.tr("Contrast adjustment from -1.0 to 1.0")
             value: GlobalConfig.services.materialSchemeContrastLevel ?? 0
             from: -1
             to: 1

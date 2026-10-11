@@ -4,9 +4,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
-import Caelestia
-import Caelestia.Config
-import Caelestia.Internal
+import Caelestia.I18n
+import Caelestia.Services
 import qs.components.misc
 
 Singleton {
@@ -29,7 +28,7 @@ Singleton {
     readonly property bool capsLock: keyboard?.capsLock ?? false
     readonly property bool numLock: keyboard?.numLock ?? false
     readonly property string defaultKbLayout: keyboard?.layout.split(",")[0] ?? "??"
-    readonly property string kbLayoutFull: keyboard?.activeKeymap ?? "Unknown"
+    readonly property string kbLayoutFull: keyboard?.activeKeymap ?? Tr.trCtx("Unknown", "keyboard layout")
     readonly property string kbLayout: kbMap.get(kbLayoutFull) ?? "??"
     readonly property var kbMap: new Map()
 
@@ -37,69 +36,20 @@ Singleton {
     readonly property alias options: extras.options
     readonly property alias devices: extras.devices
 
-    property bool hadKeyboard
     property string lastSpecialWorkspace: ""
-
-    property bool luaConfig: false
 
     signal configReloaded
 
     function dispatch(request: string): void {
-        Hyprland.dispatch(luaConfig ? _toLuaDispatch(request) : request);
+        Hyprland.dispatch(request);
     }
 
-    function _toLuaDispatch(request: string): string {
-        if (request.startsWith("workspace ")) {
-            const target = request.slice(10).trim();
-            // Relative: r+N / r-N → strip leading r
-            if (/^r[+-]\d+$/.test(target))
-                return `hl.dsp.focus({ workspace = "${target.slice(1)}" })`;
-            const id = parseInt(target, 10);
-            if (!isNaN(id) && String(id) === target)
-                return `hl.dsp.focus({ workspace = ${id} })`;
-            return `hl.dsp.focus({ workspace = "${target}" })`;
-        }
-        if (request.startsWith("togglespecialworkspace ")) {
-            const name = request.slice(22).trim();
-            if (name && name !== "special")
-                return `hl.dsp.workspace.toggle_special("${name}")`;
-            return `hl.dsp.workspace.toggle_special()`;
-        }
-        if (request === "togglespecialworkspace")
-            return `hl.dsp.workspace.toggle_special()`;
-        if (request.startsWith("movetoworkspace ")) {
-            const args = request.slice(16).trim();
-            const comma = args.indexOf(",");
-            if (comma !== -1) {
-                const ws = args.slice(0, comma).trim();
-                const win = args.slice(comma + 1).trim();
-                const wsId = parseInt(ws, 10);
-                const wsLua = (!isNaN(wsId) && String(wsId) === ws) ? String(wsId) : `"${ws}"`;
-                return `hl.dsp.window.move({ workspace = ${wsLua}, window = "${win}" })`;
-            }
-            const wsId = parseInt(args, 10);
-            const wsLua = (!isNaN(wsId) && String(wsId) === args) ? String(wsId) : `"${args}"`;
-            return `hl.dsp.window.move({ workspace = ${wsLua} })`;
-        }
-        if (request.startsWith("togglefloating")) {
-            const rest = request.slice(14).trim();
-            return rest
-                ? `hl.dsp.window.float({ action = "toggle", window = "${rest}" })`
-                : `hl.dsp.window.float({ action = "toggle" })`;
-        }
-        if (request === "pin" || request.startsWith("pin ")) {
-            const rest = request.slice(3).trim();
-            return rest
-                ? `hl.dsp.window.pin({ window = "${rest}" })`
-                : `hl.dsp.window.pin()`;
-        }
-        if (request.startsWith("killwindow")) {
-            const rest = request.slice(10).trim();
-            return rest
-                ? `hl.dsp.window.close({ window = "${rest}" })`
-                : `hl.dsp.window.close()`;
-        }
-        return request;
+    function focusWorkspace(ws: var): void {
+        dispatch(usingLua ? `hl.dsp.focus({ workspace = "${ws}" })` : `workspace ${ws}`);
+    }
+
+    function toggleSpecial(name: string): void {
+        dispatch(usingLua ? `hl.dsp.workspace.toggle_special("${name}")` : `togglespecialworkspace ${name}`);
     }
 
     function cycleSpecialWorkspace(direction: string): void {
@@ -114,11 +64,11 @@ Singleton {
             if (lastSpecialWorkspace) {
                 const workspace = workspaces.values.find(w => w.name === lastSpecialWorkspace);
                 if (workspace && workspace.lastIpcObject.windows > 0) {
-                    dispatch(usingLua ? `hl.dsp.focus({ workspace = "${lastSpecialWorkspace}" })` : `workspace ${lastSpecialWorkspace}`);
+                    focusWorkspace(lastSpecialWorkspace);
                     return;
                 }
             }
-            dispatch(usingLua ? `hl.dsp.focus({ workspace = "${openSpecials[0].name}" })` : `workspace ${openSpecials[0].name}`);
+            focusWorkspace(openSpecials[0].name);
             return;
         }
 
@@ -132,7 +82,7 @@ Singleton {
                 nextIndex = (currentIndex - 1 + openSpecials.length) % openSpecials.length;
         }
 
-        dispatch(usingLua ? `hl.dsp.focus({ workspace = "${openSpecials[nextIndex].name}" })` : `workspace ${openSpecials[nextIndex].name}`);
+        focusWorkspace(openSpecials[nextIndex].name);
     }
 
     function monitorNames(): list<string> {
@@ -143,6 +93,22 @@ Singleton {
         return Hyprland.monitorFor(screen);
     }
 
+    function trimWsName(name: string): string {
+        return name.startsWith("special:") ? name.slice("special:".length) : name;
+    }
+
+    function toplevelsForWs(ws: int, ignoredTags = []): list<HyprlandToplevel> {
+        return toplevels.values.filter(t => t.workspace && t.workspace.id === ws && !isToplevelIgnored(t, ignoredTags));
+    }
+
+    function isToplevelIgnored(toplevel: HyprlandToplevel, ignoredTags = []): bool {
+        const ipc = toplevel?.lastIpcObject;
+        if (!ipc?.class || !ipc.mapped)
+            return true;
+
+        return ipc.tags?.some(tag => ignoredTags.includes(tag.replace(/\*$/, ""))) ?? false;
+    }
+
     function reloadDynamicConfs(): void {
         if (usingLua) {
             extras.batchMessage(['eval hl.bind("Caps_Lock", hl.dsp.global("caelestia:refreshDevices"), { locked = true, non_consuming = true, ignore_mods = true, release = true })', 'eval hl.bind("Num_Lock", hl.dsp.global("caelestia:refreshDevices"), { locked = true, non_consuming = true, ignore_mods = true, release = true })']);
@@ -151,37 +117,8 @@ Singleton {
         }
     }
 
-    Component.onCompleted: {
-        reloadDynamicConfs();
-        luaConfigDetector.running = true;
-    }
-
-    onCapsLockChanged: {
-        if (!GlobalConfig.utilities.toasts.capsLockChanged)
-            return;
-
-        if (capsLock)
-            Toaster.toast(qsTr("Caps lock enabled"), qsTr("Caps lock is currently enabled"), "keyboard_capslock_badge");
-        else
-            Toaster.toast(qsTr("Caps lock disabled"), qsTr("Caps lock is currently disabled"), "keyboard_capslock");
-    }
-
-    onNumLockChanged: {
-        if (!GlobalConfig.utilities.toasts.numLockChanged)
-            return;
-
-        if (numLock)
-            Toaster.toast(qsTr("Num lock enabled"), qsTr("Num lock is currently enabled"), "looks_one");
-        else
-            Toaster.toast(qsTr("Num lock disabled"), qsTr("Num lock is currently disabled"), "timer_1");
-    }
-
-    onKbLayoutFullChanged: {
-        if (hadKeyboard && GlobalConfig.utilities.toasts.kbLayoutChanged)
-            Toaster.toast(qsTr("Keyboard layout changed"), qsTr("Layout changed to: %1").arg(kbLayoutFull), "keyboard");
-
-        hadKeyboard = !!keyboard;
-    }
+    onUsingLuaChanged: reloadDynamicConfs()
+    Component.onCompleted: reloadDynamicConfs()
 
     Connections {
         function onRawEvent(event: HyprlandEvent): void {
@@ -192,7 +129,6 @@ Singleton {
             if (n === "configreloaded") {
                 root.configReloaded();
                 root.reloadDynamicConfs();
-                luaConfigDetector.running = true;
             } else if (["workspace", "moveworkspace", "activespecial", "focusedmon"].includes(n)) {
                 Hyprland.refreshWorkspaces();
                 Hyprland.refreshMonitors();
@@ -281,21 +217,7 @@ Singleton {
         onReleased: extras.refreshDevices()
     }
 
-    Process {
-        id: luaConfigDetector
 
-        command: ["hyprctl", "systeminfo"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                for (const line of text.split("\n")) {
-                    if (line.includes("configProvider:")) {
-                        root.luaConfig = line.toLowerCase().includes("lua");
-                        break;
-                    }
-                }
-            }
-        }
-    }
 
     HyprExtras {
         id: extras
