@@ -5,7 +5,7 @@ readonly source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly project_dir="$(dirname -- "$source_dir")"
 readonly build_dir="$source_dir/build-user"
 readonly config_dir="$HOME/.config/quickshell/caelestia"
-readonly cli_dir="${CAELESTIA_CLI_SOURCE:-$project_dir/cli-update}"
+readonly cli_dir="${CAELESTIA_CLI_SOURCE:-$project_dir/cli}"
 if [[ ! -f "$cli_dir/src/caelestia/__init__.py" ]]; then
     echo "Set CAELESTIA_CLI_SOURCE to your CLI checkout." >&2
     exit 1
