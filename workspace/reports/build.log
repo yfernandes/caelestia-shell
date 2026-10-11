@@ -1,0 +1,21 @@
+-- QML install dir: //usr/lib/qt6/qml
+-- Created QML module: Caelestia
+-- Created QML module: Caelestia.Components
+-- Created QML module: Caelestia.Config
+-- Created QML module: Caelestia.Internal
+-- Created QML module: Caelestia.Models
+-- Created QML module: Caelestia.Services
+-- Created QML module: Caelestia.Blobs
+-- Created QML module: Caelestia.Images
+-- Configuring done (0.3s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/yago/projects/active/caelestia/caelestia-shell/build
+[1/46] Automatic MOC and UIC for target caelestia-config
+[2/46] Running AUTOMOC file extraction for target caelestia-config
+[3/46] Running moc --collect-json for target caelestia-config
+[4/45] Linking CXX shared module qml/Caelestia/Blobs/libcaelestia-blobsplugin.so
+[5/45] Linking CXX shared module qml/Caelestia/Images/libcaelestia-imagesplugin.so
+[6/45] Building CXX object extras/CMakeFiles/version.dir/version.cpp.o
+[7/45] Linking CXX executable lib/version
+[8/45] Building CXX object plugin/src/Caelestia/Config/CMakeFiles/caelestia-config.dir/config.cpp.o
+ninja: build stopped: interrupted by user.
